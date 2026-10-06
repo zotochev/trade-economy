@@ -315,3 +315,18 @@ def rotation_chart(df: pd.DataFrame, x: str, y: str, x_title: str, y_title: str,
     fig.update_xaxes(range=[-lim_x, lim_x], title_text=x_title, zeroline=False)
     fig.update_yaxes(range=[-lim_y, lim_y], title_text=y_title, showgrid=False)
     return fig
+
+
+def grouped_bars(df: pd.DataFrame, units: str = "", height: int = 320) -> go.Figure:
+    """Сгруппированные столбцы: строки df — категории по оси X (например, годы), колонки — серии."""
+    mode = theme()
+    c = PALETTE[mode]
+    fig = go.Figure()
+    for i, col in enumerate(df.columns):
+        fig.add_trace(go.Bar(x=list(df.index), y=df[col], name=col, marker=dict(color=c[i], cornerradius=4),
+                             hovertemplate=f"{col}: " + "%{y:,.1f}" + units + "<extra>%{x}</extra>"))
+    fig.add_hline(y=0, line_width=1, line_color=GRID[mode])
+    _base_layout(fig, height, legend=True)
+    fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.08)
+    fig.update_yaxes(ticksuffix=units)
+    return fig

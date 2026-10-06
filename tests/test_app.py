@@ -79,6 +79,14 @@ for p in at.segmented_control[0].options:
     assert not at.exception, (p, at.exception)
 print("акции и сектора ок")
 
+at.switch_page("views/stock.py").run()
+assert not at.exception, at.exception
+for tk in ["XOM", "JPM", "NVDA", "ZZZZZZ"]:  # цикличная, банк, рост, несуществующий тикер
+    at.text_input(key="ticker").set_value(tk).run()
+    assert not at.exception, (tk, at.exception)
+assert at.error, "для несуществующего тикера должна быть ошибка"
+print("отдельная акция ок")
+
 at.switch_page("views/explorer.py").run()
 assert not at.exception, at.exception
 for g in GROUPS:
