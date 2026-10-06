@@ -88,13 +88,14 @@ def price_yield_chart(yields, prices, y0: float, p0: float, y1: float, p1: float
     return fig
 
 
-def hbar_chart(labels: list[str], values: list[float], units: str = "%", height: int = 200) -> go.Figure:
+def hbar_chart(labels: list[str], values: list[float], units: str = "%", height: int = 200,
+               signed: bool = True) -> go.Figure:
     """Горизонтальные столбцы одного цвета, подписи значений у концов."""
     mode = theme()
     fig = go.Figure(go.Bar(
         x=values, y=labels, orientation="h", marker=dict(color=PALETTE[mode][0], cornerradius=4),
-        width=0.5, text=[f"{v:+.1f}{units}" for v in values], textposition="outside",
-        hovertemplate="%{y}: %{x:+.2f}" + units + "<extra></extra>", cliponaxis=False,
+        width=0.5, text=[f"{v:{'+' if signed else ''}.1f}{units}" for v in values], textposition="outside",
+        hovertemplate="%{y}: %{x:" + ("+" if signed else "") + ".2f}" + units + "<extra></extra>", cliponaxis=False,
     ))
     _base_layout(fig, height, legend=False)
     fig.update_yaxes(autorange="reversed", gridcolor="rgba(0,0,0,0)")
@@ -199,7 +200,7 @@ def regime_ribbon(regime: pd.Series, recessions: list[tuple] | None = None, heig
 
 
 def heatmap(table: pd.DataFrame, hover: pd.DataFrame, highlight: str | None = None,
-            height: int | None = None) -> go.Figure:
+            height: int | None = None, scale_title: str = "% год.") -> go.Figure:
     """Тепловая карта «актив × режим»: синий — рост, красный — падение, серый — около нуля."""
     mode = theme()
     neg, mid, pos = DIVERGING[mode]
@@ -211,7 +212,7 @@ def heatmap(table: pd.DataFrame, hover: pd.DataFrame, highlight: str | None = No
         z=z, x=cols, y=list(table.index), zmin=-m, zmax=m, colorscale=[[0, neg], [0.5, mid], [1, pos]],
         text=text, texttemplate="%{text}", textfont=dict(size=12), customdata=hover.values,
         hovertemplate="%{y} · %{x}<br>%{customdata}<extra></extra>", xgap=2, ygap=2,
-        colorbar=dict(title="% год.", thickness=10, len=0.6),
+        colorbar=dict(title=scale_title, thickness=10, len=0.6),
     ))
     _base_layout(fig, height or 28 * len(table) + 60, legend=False)
     fig.update_yaxes(autorange="reversed", showgrid=False)
@@ -283,4 +284,34 @@ def xy_lines(series: dict[str, tuple], x_title: str, y_title: str, marker: tuple
     fig.update_xaxes(title_text=x_title, showgrid=False)
     fig.update_yaxes(title_text=y_title)
     fig.update_layout(hovermode="x unified")
+    return fig
+
+
+# ---------- сектора ----------
+
+def rotation_chart(df: pd.DataFrame, x: str, y: str, x_title: str, y_title: str,
+                   quadrants: tuple[str, str, str, str], height: int = 420) -> go.Figure:
+    """Точки секторов в четырёх четвертях. quadrants: (правый верх, правый низ, левый низ, левый верх).
+    df: индекс — подпись точки, колонки x и y."""
+    mode = theme()
+    c = PALETTE[mode]
+    lim_x = max(float(df[x].abs().max()) * 1.2, 1)
+    lim_y = max(float(df[y].abs().max()) * 1.2, 1)
+    fig = go.Figure()
+    for (label, xs, ys), color in zip(
+            [(quadrants[0], 1, 1), (quadrants[1], 1, -1), (quadrants[2], -1, -1), (quadrants[3], -1, 1)],
+            [c[2], c[3], c[7], c[0]]):
+        fig.add_shape(type="rect", x0=0, x1=xs * lim_x, y0=0, y1=ys * lim_y, line_width=0,
+                      fillcolor=color, opacity=0.08, layer="below")
+        fig.add_annotation(x=xs * lim_x * 0.97, y=ys * lim_y * 0.95, text=f"<b>{label}</b>", showarrow=False,
+                           xanchor="right" if xs > 0 else "left", font=dict(size=12, color=color))
+    fig.add_hline(y=0, line_width=1, line_color=GRID[mode])
+    fig.add_vline(x=0, line_width=1, line_color=GRID[mode])
+    fig.add_trace(go.Scatter(
+        x=df[x], y=df[y], mode="markers+text", text=list(df.index), textposition="top center",
+        marker=dict(size=11, color=c[0], line=dict(width=2, color="white" if mode == "light" else "#1a1a19")),
+        hovertemplate="%{text}<br>" + x_title + ": %{x:+.1f}<br>" + y_title + ": %{y:+.1f}<extra></extra>"))
+    _base_layout(fig, height, legend=False)
+    fig.update_xaxes(range=[-lim_x, lim_x], title_text=x_title, zeroline=False)
+    fig.update_yaxes(range=[-lim_y, lim_y], title_text=y_title, showgrid=False)
     return fig

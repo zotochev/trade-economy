@@ -167,3 +167,38 @@ def status() -> pd.DataFrame:
                     "Обновлено": datetime.fromtimestamp(p.stat().st_mtime).strftime("%Y-%m-%d %H:%M")}
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+# ---------- снимок мультипликаторов ETF (без истории) ----------
+
+SNAPSHOT_FIELDS = {"trailingPE": "P/E", "dividendYield": "Дивиденды, %"}
+
+
+def _snapshot_path() -> Path:
+    return CACHE_DIR / "snapshot" / "etf_info.csv"
+
+
+def update_snapshot(tickers: list[str], force: bool = False) -> pd.DataFrame:
+    """P/E и дивидендная доходность ETF на сегодня (yfinance Ticker.info). Только текущее значение."""
+    p = _snapshot_path()
+    if p.exists() and not force and time.time() - p.stat().st_mtime < MAX_AGE:
+        return pd.read_csv(p, index_col=0)
+    rows = {}
+    for t in tickers:
+        try:
+            info = yf.Ticker(t).info
+            rows[t] = {name: info.get(field) for field, name in SNAPSHOT_FIELDS.items()}
+        except Exception:  # один тикер не должен ломать снимок
+            rows[t] = {name: None for name in SNAPSHOT_FIELDS.values()}
+    df = pd.DataFrame(rows).T
+    if df.notna().any().any():
+        p.parent.mkdir(parents=True, exist_ok=True)
+        df.to_csv(p)
+    elif p.exists():  # источник ничего не вернул — оставляем старый снимок
+        return pd.read_csv(p, index_col=0)
+    return df
+
+
+def snapshot_date() -> str | None:
+    p = _snapshot_path()
+    return datetime.fromtimestamp(p.stat().st_mtime).strftime("%d.%m.%Y") if p.exists() else None

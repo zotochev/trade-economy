@@ -188,6 +188,8 @@ CATALOG: list[Series] = [
     Series("IWM", "yf", "Малые компании (Russell 2000)", "Факторы", "$ (adj.)", "D"),
     Series("IWD", "yf", "Стоимость (Russell 1000 Value)", "Факторы", "$ (adj.)", "D"),
     Series("IWF", "yf", "Рост (Russell 1000 Growth)", "Факторы", "$ (adj.)", "D"),
+    Series("RSP", "yf", "S&P 500 равными долями", "Факторы", "$ (adj.)", "D",
+           "Все 500 компаний с одинаковым весом. Отставание от SPY — рынок тянут немногие гиганты."),
 ]
 
 BY_KEY: dict[str, Series] = {s.key: s for s in CATALOG}

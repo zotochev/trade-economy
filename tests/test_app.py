@@ -72,6 +72,13 @@ for p in at.segmented_control[0].options:
     assert not at.exception, (p, at.exception)
 print("оценка рынка ок")
 
+at.switch_page("views/sectors.py").run()
+assert not at.exception, at.exception
+for p in at.segmented_control[0].options:
+    at.segmented_control[0].set_value(p).run()
+    assert not at.exception, (p, at.exception)
+print("акции и сектора ок")
+
 at.switch_page("views/explorer.py").run()
 assert not at.exception, at.exception
 for g in GROUPS:
