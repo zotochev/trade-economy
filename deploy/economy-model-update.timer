@@ -1,0 +1,14 @@
+[Unit]
+Description=economy-model - refresh data twice a day
+
+[Timer]
+# 22:30 UTC — after the US market close (daily prices, FRED daily series);
+# 13:00 UTC — after the 8:30 ET macro releases (CPI, payrolls, claims).
+OnCalendar=*-*-* 13:00:00 UTC
+OnCalendar=*-*-* 22:30:00 UTC
+# Catch up a missed run if the server was off at the scheduled time
+Persistent=true
+RandomizedDelaySec=300
+
+[Install]
+WantedBy=timers.target

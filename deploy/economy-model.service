@@ -1,0 +1,27 @@
+[Unit]
+Description=economy-model - macro dashboard (Streamlit)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Adjust User/WorkingDirectory/ExecStart to match where the repo is actually
+# cloned and which user should own the process (avoid running as root).
+# data_cache/ is resolved relative to the repo, the user needs write access to it.
+User=crip
+WorkingDirectory=/opt/economy-model-lab
+# Listens only on localhost; nginx serves it at https://kainode.duckdns.org/economy/
+# (deploy/economy-model.nginx.conf). baseUrlPath must match the nginx location.
+ExecStart=/opt/economy-model-lab/.venv/bin/streamlit run app.py \
+    --server.address 127.0.0.1 \
+    --server.port 10010 \
+    --server.baseUrlPath economy \
+    --server.headless true \
+    --browser.gatherUsageStats false
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=economy-model - refresh FRED / Yahoo / Shiller data cache
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=crip
+WorkingDirectory=/opt/economy-model-lab
+# --force: the timer fires twice a day, more often than the 12 h freshness window,
+# so without it the morning run would skip series downloaded the evening before.
+ExecStart=/opt/economy-model-lab/.venv/bin/python update_data.py --force
+TimeoutStartSec=600
+StandardOutput=journal
+StandardError=journal

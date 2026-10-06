@@ -1,0 +1,13 @@
+[project]
+name = "economy-model-lab"
+version = "0.1.0"
+description = "Дашборд «Модель экономики»: макро-данные США, режимы, ставки, оценка рынка"
+requires-python = ">=3.13"
+dependencies = [
+    "pandas>=3.0.6",
+    "plotly>=7.1.0",
+    "requests>=2.34.2",
+    "streamlit>=1.65.0",
+    "xlrd>=2.0.2",
+    "yfinance>=1.7.0",
+]
