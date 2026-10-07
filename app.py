@@ -32,6 +32,7 @@ if version == NEW:
         "Модель экономики": [
             st.Page("views/v2/map.py", title="Карта: цепочка слоёв", icon="🗺️", default=True),
             st.Page("views/v2/policy.py", title="2. Политика ФРС", icon="🏛️"),
+            st.Page("views/v2/market_rates.py", title="3. Рыночные ставки", icon="📉"),
             st.Page("views/v2/credit.py", title="4. Финансовые условия", icon="💳"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],

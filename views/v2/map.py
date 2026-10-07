@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import learn, policy, ui
+from core import curve, learn, policy, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -50,14 +50,11 @@ def answer(num: int) -> tuple[str, str, str]:
         y10 = float(ui.load("DGS10").iloc[-1])
         tp = float(ui.load("THREEFYTP10").iloc[-1])
         slope = float(ui.load("T10Y3M").iloc[-1])
-        if slope < 0:
-            head, color = "Рынок ждёт снижения ставок: длинные ставки ниже коротких", "orange"
-        elif tp > 0.5:
-            head, color = "Рынок требует доплату за длинный долг: длинные ставки высоки из-за премии за риск", "orange"
-        else:
-            head, color = "Рынок ждёт ставки примерно на нынешнем уровне: кривая нормальная", "gray"
+        ff = float(ui.load("T5YIFR").iloc[-1])
+        head, color = curve.verdict(tp, slope, ff)
         return (head, f"10-летние {y10:.2f}%, из них премия за срок ≈ {tp:+.2f} п.п. (модель Кима–Райта). "
-                      f"Наклон 10 лет − 3 мес.: {slope:+.2f} п.п.", color)
+                      f"Наклон 10 лет − 3 мес.: {slope:+.2f} п.п. Дальние инфляционные ожидания {ff:.2f}%.",
+                color)
     if num == 4:
         imp = -float(ui.load("FCIG").iloc[-1])
         prob = float(ui.load("ebp_prob").iloc[-1])

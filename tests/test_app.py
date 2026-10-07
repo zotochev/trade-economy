@@ -109,36 +109,30 @@ assert not at.exception, at.exception
 assert not at.warning, [w.value for w in at.warning]  # у каждого слоя карты есть ответ
 print("карта ок")
 
-at.switch_page("views/v2/credit.py").run()
-assert not at.exception, at.exception
-for p in at.segmented_control(key="period").options:
-    at.segmented_control(key="period").set_value(p).run()
-    assert not at.exception, (p, at.exception)
-for ex in ["fcig", "spread", "banks", "recession"]:
-    at.toggle(key=f"ex_{ex}").set_value(True).run()
-    assert not at.exception, (ex, at.exception)
-    for kind in at.segmented_control(key=f"exk_{ex}").options:
-        at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
-        assert not at.exception, (ex, kind, at.exception)
-print("финансовые условия ок")
 
-at.switch_page("views/v2/policy.py").run()
-assert not at.exception, at.exception
-for p in at.segmented_control(key="period").options:
-    at.segmented_control(key="period").set_value(p).run()
-    assert not at.exception, (p, at.exception)
-for ex in ["stance", "rules", "market", "balance"]:
-    at.toggle(key=f"ex_{ex}").set_value(True).run()
-    assert not at.exception, (ex, at.exception)
-    for kind in at.segmented_control(key=f"exk_{ex}").options:
-        at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
-        assert not at.exception, (ex, kind, at.exception)
-        radios = [r for r in at.radio if r.key and r.key.startswith(f"exr_{ex}_")]
-        for r in radios:
-            for opt in r.options:
-                r.set_value(opt).run()
-                assert not at.exception, (ex, kind, opt, at.exception)
-print("политика ФРС ок")
+def check_layer(page: str, examples: list[str], name: str) -> None:
+    """Экран слоя: все периоды, все группы примеров и каждый пример внутри группы."""
+    at.switch_page(page).run()
+    assert not at.exception, at.exception
+    for p in at.segmented_control(key="period").options:
+        at.segmented_control(key="period").set_value(p).run()
+        assert not at.exception, (page, p, at.exception)
+    for ex in examples:
+        at.toggle(key=f"ex_{ex}").set_value(True).run()
+        assert not at.exception, (ex, at.exception)
+        for kind in at.segmented_control(key=f"exk_{ex}").options:
+            at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
+            assert not at.exception, (ex, kind, at.exception)
+            for r in [r for r in at.radio if r.key and r.key.startswith(f"exr_{ex}_")]:
+                for opt in r.options:
+                    r.set_value(opt).run()
+                    assert not at.exception, (ex, kind, opt, at.exception)
+    print(f"{name} ок")
+
+
+check_layer("views/v2/policy.py", ["stance", "rules", "market", "balance"], "политика ФРС")
+check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve"], "рыночные ставки")
+check_layer("views/v2/credit.py", ["fcig", "spread", "banks", "recession"], "финансовые условия")
 
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception
