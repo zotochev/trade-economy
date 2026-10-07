@@ -330,3 +330,54 @@ def grouped_bars(df: pd.DataFrame, units: str = "", height: int = 320) -> go.Fig
     fig.update_layout(barmode="group", bargap=0.3, bargroupgap=0.08)
     fig.update_yaxes(ticksuffix=units)
     return fig
+
+
+# ---------- слои модели (новая версия) ----------
+
+def _recession_rects(fig: go.Figure, recessions: list[tuple] | None, start) -> None:
+    for (a, b) in recessions or []:
+        if b >= start:
+            fig.add_vrect(x0=max(a, start), x1=b, fillcolor=RECESSION_FILL[theme()], line_width=0, layer="below")
+
+
+def dual_axis_chart(left: tuple[str, pd.Series, str], right: tuple[str, pd.Series, str],
+                    recessions: list[tuple] | None = None, invert_right: bool = False,
+                    height: int = 360) -> go.Figure:
+    """Два ряда в разных единицах: left/right = (название, ряд, единицы).
+    invert_right переворачивает правую ось — чтобы обратная связь выглядела как совпадение линий."""
+    from plotly.subplots import make_subplots
+    mode = theme()
+    c = PALETTE[mode]
+    fig = make_subplots(specs=[[{"secondary_y": True}]])
+    _recession_rects(fig, recessions, min(left[1].index[0], right[1].index[0]))
+    for i, ((name, s, units), sec) in enumerate(((left, False), (right, True))):
+        fig.add_trace(go.Scatter(x=s.index, y=s.values, name=name, mode="lines", line=dict(width=2, color=c[i]),
+                                 hovertemplate="%{y:,.2f} " + units + "<extra>" + name + "</extra>"),
+                      secondary_y=sec)
+    _base_layout(fig, height, legend=True)
+    fig.update_layout(hovermode="x unified")
+    fig.update_yaxes(title_text=f"{left[0]}, {left[2]}", title_font=dict(color=c[0]), secondary_y=False)
+    fig.update_yaxes(title_text=f"{right[0]}, {right[2]}" + (" (ось перевёрнута)" if invert_right else ""),
+                     title_font=dict(color=c[1]), showgrid=False, secondary_y=True,
+                     autorange="reversed" if invert_right else True)
+    return fig
+
+
+def contrib_chart(parts: pd.DataFrame, total: pd.Series, units: str = "п.п.",
+                  recessions: list[tuple] | None = None, height: int = 400) -> go.Figure:
+    """Столбики-вклады (плюс вверх, минус вниз) и линия итога: из чего сложилось значение в каждый месяц."""
+    mode = theme()
+    c = PALETTE[mode]
+    fig = go.Figure()
+    _recession_rects(fig, recessions, parts.index[0])
+    for i, col in enumerate(parts.columns):
+        fig.add_trace(go.Bar(x=parts.index, y=parts[col], name=col, marker=dict(color=c[i % len(c)], line_width=0),
+                             hovertemplate="%{y:+.2f} " + units + "<extra>" + col + "</extra>"))
+    fig.add_trace(go.Scatter(x=total.index, y=total.values, name="Итого", mode="lines",
+                             line=dict(width=2.5, color="#1a1a19" if mode == "light" else "#f0efec"),
+                             hovertemplate="<b>%{y:+.2f} " + units + "</b><extra>Итого</extra>"))
+    fig.add_hline(y=0, line_width=1, line_color=GRID[mode])
+    _base_layout(fig, height, legend=True)
+    fig.update_layout(barmode="relative", bargap=0.05, hovermode="x unified")
+    fig.update_yaxes(ticksuffix=" " + units)
+    return fig

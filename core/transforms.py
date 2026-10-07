@@ -24,6 +24,12 @@ def yoy_diff(s: pd.Series) -> pd.Series:
     return s - _year_ago(s)
 
 
+def cut(s: pd.Series, years: int | None) -> pd.Series:
+    """Последние years лет ряда (None — вся история)."""
+    s = s.dropna()
+    return s[s.index >= s.index[-1] - pd.DateOffset(years=years)] if years else s
+
+
 def rebase(s: pd.Series) -> pd.Series:
     s = s.dropna()
     return s / s.iloc[0] * 100

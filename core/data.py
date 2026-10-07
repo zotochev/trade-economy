@@ -1,4 +1,4 @@
-"""Загрузка рядов из FRED, yfinance и данных Шиллера с дисковым кэшем.
+"""Загрузка рядов из FRED, yfinance, данных Шиллера и CSV-файлов ФРС с дисковым кэшем.
 
 Каждый ряд хранится в data_cache/<source>/<key>.csv (колонки date,value).
 Ряд перекачивается, если файла нет или он старше MAX_AGE. При ошибке
@@ -25,7 +25,17 @@ CACHE_DIR = Path(__file__).resolve().parent.parent / "data_cache"
 MAX_AGE = 12 * 3600  # секунд
 FRED_URL = "https://fred.stlouisfed.org/graph/fredgraph.csv?id={}"
 SHILLER_PAGE = "https://shillerdata.com/"
-HEADERS = {"User-Agent": "Mozilla/5.0"}
+HEADERS = {"User-Agent": "Mozilla/5.0"}  # только для Шиллера: FRED с этим заголовком не отвечает
+FED_NOTES = "https://www.federalreserve.gov/econres/notes/feds-notes/"
+# Файл ФРС → {колонка: ключ ряда}. Каждый файл скачивается одним запросом.
+FED_FILES = {
+    FED_NOTES + "ebp_csv.csv": {"gz_spread": "gz_spread", "ebp": "ebp", "est_prob": "ebp_prob"},
+    FED_NOTES + "fci_g_public_monthly_3yr.csv": {
+        "FCI-G Index (baseline)": "FCIG", "FFR": "FCIG_FFR", "10Yr Treasury": "FCIG_10Y",
+        "Mortgage Rate": "FCIG_MORT", "BBB": "FCIG_BBB", "Stock Market": "FCIG_STOCK",
+        "House Prices": "FCIG_HOUSE", "Dollar": "FCIG_USD"},
+}
+FED_SCALE = {"ebp_prob": 100}  # вероятность в файле — доля, храним в %
 NY = ZoneInfo("America/New_York")
 MARKET_CLOSE_HOUR = 17  # после 17:00 по Нью-Йорку дневной бар считаем закрытым
 
@@ -105,6 +115,20 @@ def _fetch_shiller() -> pd.DataFrame:
     return df.apply(pd.to_numeric, errors="coerce")
 
 
+def _fetch_fed(keys: list[str]) -> dict[str, pd.Series]:
+    """CSV-файлы из заметок ФРС (FEDS Notes): качаем только файлы, где есть нужные ключи."""
+    out = {}
+    for url, cols in FED_FILES.items():
+        if not set(cols.values()) & set(keys):
+            continue
+        r = requests.get(url, timeout=60)
+        r.raise_for_status()
+        df = pd.read_csv(io.StringIO(r.text), index_col=0, parse_dates=True)
+        for col, key in cols.items():
+            out[key] = pd.to_numeric(df[col], errors="coerce") * FED_SCALE.get(key, 1)
+    return out
+
+
 # ---------- публичный API ----------
 
 def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateResult]:
@@ -126,8 +150,8 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
     with ThreadPoolExecutor(max_workers=6) as ex:
         results += list(ex.map(one_fred, by_src.get("fred", [])))
 
-    # yfinance и Шиллер отдают несколько рядов одним запросом
-    for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller())):
+    # yfinance, Шиллер и файлы ФРС отдают несколько рядов одним запросом
+    for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed)):
         ks = by_src.get(src, [])
         if not ks:
             continue

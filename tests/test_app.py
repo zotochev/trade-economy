@@ -100,3 +100,24 @@ for g in GROUPS:
 at.switch_page("views/data_status.py").run()
 assert not at.exception, at.exception
 print(f"OK: {len(CATALOG)} рядов, страница данных — {len(at.dataframe[0].value)} строк")
+
+# ---------- новая версия: цепочка слоёв ----------
+at.radio(key="version").set_value("Новая (в разработке)").run()
+assert not at.exception, at.exception
+at.switch_page("views/v2/map.py").run()
+assert not at.exception, at.exception
+assert not at.warning, [w.value for w in at.warning]  # у каждого слоя карты есть ответ
+print("карта ок")
+
+at.switch_page("views/v2/credit.py").run()
+assert not at.exception, at.exception
+for p in at.segmented_control(key="period").options:
+    at.segmented_control(key="period").set_value(p).run()
+    assert not at.exception, (p, at.exception)
+for ex in ["fcig", "spread", "banks", "recession"]:
+    at.toggle(key=f"ex_{ex}").set_value(True).run()
+    assert not at.exception, (ex, at.exception)
+    for kind in at.segmented_control(key=f"exk_{ex}").options:
+        at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
+        assert not at.exception, (ex, kind, at.exception)
+print("финансовые условия ок")
