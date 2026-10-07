@@ -34,6 +34,7 @@ if version == NEW:
             st.Page("views/v2/policy.py", title="2. Политика ФРС", icon="🏛️"),
             st.Page("views/v2/market_rates.py", title="3. Рыночные ставки", icon="📉"),
             st.Page("views/v2/credit.py", title="4. Финансовые условия", icon="💳"),
+            st.Page("views/v2/growth.py", title="5. Рост и риск рецессии", icon="⚙️"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
         "Пока из старой версии": old_pages(with_cockpit=False),

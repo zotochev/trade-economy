@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import curve, learn, policy, ui
+from core import curve, growth, learn, policy, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -67,12 +67,12 @@ def answer(num: int) -> tuple[str, str, str]:
         return (head, f"Вклад в рост ВВП за год {imp:+.1f} п.п. (FCI-G). Риск рецессии по кредитному рынку "
                       f"{prob:.0f}%.", color)
     if num == 5:
-        cp = float(ui.load("RECPROUSM156N").iloc[-1])
-        sahm = float(ui.load("SAHMREALTIME").iloc[-1])
-        bad = cp > 30 or sahm >= 0.5
-        head = ("Экономика, похоже, входит в спад" if bad else "Спада не видно: экономика растёт")
-        return (head, f"Вероятность, что рецессия уже идёт, — {cp:.0f}% (модель Шове–Пигера). "
-                      f"Правило Сама {sahm:.2f} (тревога от 0,5).", "red" if bad else "green")
+        head, color = growth.verdict(ui.load)
+        table = growth.risk_table(ui.load)
+        alarms = int((table["Тревога"] == "🔴 да").sum())
+        return (head, f"Наукаст ВВП текущего квартала {ui.load('GDPNOW').iloc[-1]:+.1f}% в годовом темпе при "
+                      f"трендовом росте ≈ {ui.load('trend_g_hlw').iloc[-1]:.1f}%. Моделей рецессии в тревоге: "
+                      f"{alarms} из {len(table)}.", color)
     if num == 6:
         core = yoy_pct(ui.load("PCEPILFE")).dropna()
         now, year = float(core.iloc[-1]), ago(core, 12)
