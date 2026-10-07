@@ -36,9 +36,13 @@ if version == NEW:
             st.Page("views/v2/credit.py", title="4. Финансовые условия", icon="💳"),
             st.Page("views/v2/growth.py", title="5. Рост и риск рецессии", icon="⚙️"),
             st.Page("views/v2/inflation.py", title="6. Инфляция", icon="🔥"),
+            st.Page("views/v2/markets.py", title="7. Рынки", icon="💹"),
+            st.Page("views/sectors.py", title="7а. Сектора и факторы", icon="🏭"),
+            st.Page("views/stock.py", title="7б. Отдельная акция", icon="🔬"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
-        "Пока из старой версии": old_pages(with_cockpit=False),
+        "Пока из старой версии": [p for p in old_pages(with_cockpit=False)
+                                  if p.title not in ("Акции и сектора", "Отдельная акция")],
         "Справочник": reference,
     }
 else:

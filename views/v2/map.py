@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import curve, growth, inflation, learn, policy, ui
+from core import curve, growth, inflation, learn, markets, policy, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -79,15 +79,13 @@ def answer(num: int) -> tuple[str, str, str]:
         return (head, f"Устойчивая инфляция ≈ {level:.1f}% (медиана четырёх мер) при цели 2%. Базовая PCE "
                       f"{core.iloc[-1]:.1f}% за год, темп за 3 месяца {inflation.three_month(ui.load).iloc[-1]:.1f}%.",
                 color)
-    cape = ui.load("CAPE").dropna()
-    spx = ui.load("^GSPC")
-    above = float(spx.iloc[-1]) > float(spx.rolling(200).mean().iloc[-1])
-    rich = cape.iloc[-1] > 30
-    head = (("Акции дороги" if rich else "Акции оценены умеренно") + ", тренд " +
-            ("восходящий" if above else "нисходящий"))
-    return (head, f"Shiller CAPE {cape.iloc[-1]:.1f} при среднем за историю {cape.mean():.0f}. S&P 500 "
-                  f"{'выше' if above else 'ниже'} 200-дневной средней.", "orange" if rich else "gray")
-
+    head, color, prem, pct = markets.verdict(ui.load)
+    cape = float(ui.load("CAPE").dropna().iloc[-1])
+    corr = float(markets.stock_bond_corr(ui.load).iloc[-1])
+    return (head, f"Shiller CAPE {cape:.1f}: ожидаемая реальная доходность акций ≈ {100 / cape:.1f}% против "
+                  f"{float(ui.load('DFII10').iloc[-1]):.1f}% у 10-летних TIPS — премия {prem:+.1f} п.п. (ниже, чем "
+                  f"в {100 - pct:.0f}% истории). Корреляция акций и облигаций {corr:+.2f}: облигации "
+                  f"{'сейчас не страхуют акции' if corr > 0 else 'страхуют акции'}.", color)
 
 left, right = st.columns([5, 1], vertical_alignment="bottom")
 left.title("Карта экономики")
