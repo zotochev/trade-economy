@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import learn, ui
+from core import learn, policy, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -40,15 +40,12 @@ def answer(num: int) -> tuple[str, str, str]:
     if num == 2:
         ffr = float(ui.load("DFF").iloc[-1])
         core = float(yoy_pct(ui.load("PCEPILFE")).dropna().iloc[-1])
+        rstar = float(ui.load("rstar_hlw").iloc[-1])
         real = ffr - core
-        if real > 2:
-            head, color = "ФРС тормозит экономику", "red"
-        elif real < 0.5:
-            head, color = "ФРС разгоняет экономику", "green"
-        else:
-            head, color = "ФРС держит ставку около нейтральной — ни тормозит, ни разгоняет", "gray"
-        return (head, f"Реальная ставка {real:+.1f}% = ставка {ffr:.2f}% − базовая инфляция {core:.1f}%. "
-                      f"Нейтральной считают ≈ 0,5–2%, оценки сильно расходятся.", color)
+        head, color = policy.verdict(real - rstar)
+        return (head, f"Реальная ставка {real:+.1f}% (ставка {ffr:.2f}% − базовая инфляция {core:.1f}%) против "
+                      f"нейтральной ≈ {rstar:.1f}% по модели HLW. Ошибка оценки нейтральной — около ±1 п.п.",
+                color)
     if num == 3:
         y10 = float(ui.load("DGS10").iloc[-1])
         tp = float(ui.load("THREEFYTP10").iloc[-1])
@@ -100,7 +97,10 @@ def answer(num: int) -> tuple[str, str, str]:
                   f"{'выше' if above else 'ниже'} 200-дневной средней.", "orange" if rich else "gray")
 
 
-st.title("Карта экономики")
+left, right = st.columns([5, 1], vertical_alignment="bottom")
+left.title("Карта экономики")
+with right:
+    learn.help_link("Как пользоваться")
 st.markdown("Экономика — не набор отдельных показателей, а **цепочка**: решение на одном уровне с задержкой "
             "передаётся на следующий. Читайте сверху вниз: где сейчас возник импульс и докуда он уже дошёл.")
 

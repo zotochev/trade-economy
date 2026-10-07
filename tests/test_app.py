@@ -121,3 +121,27 @@ for ex in ["fcig", "spread", "banks", "recession"]:
         at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
         assert not at.exception, (ex, kind, at.exception)
 print("финансовые условия ок")
+
+at.switch_page("views/v2/policy.py").run()
+assert not at.exception, at.exception
+for p in at.segmented_control(key="period").options:
+    at.segmented_control(key="period").set_value(p).run()
+    assert not at.exception, (p, at.exception)
+for ex in ["stance", "rules", "market", "balance"]:
+    at.toggle(key=f"ex_{ex}").set_value(True).run()
+    assert not at.exception, (ex, at.exception)
+    for kind in at.segmented_control(key=f"exk_{ex}").options:
+        at.segmented_control(key=f"exk_{ex}").set_value(kind).run()
+        assert not at.exception, (ex, kind, at.exception)
+        radios = [r for r in at.radio if r.key and r.key.startswith(f"exr_{ex}_")]
+        for r in radios:
+            for opt in r.options:
+                r.set_value(opt).run()
+                assert not at.exception, (ex, kind, opt, at.exception)
+print("политика ФРС ок")
+
+at.switch_page("views/v2/help.py").run()
+assert not at.exception, at.exception
+at.text_input(key="glossary_q").set_value("ставка").run()
+assert not at.exception, at.exception
+print("справка ок")

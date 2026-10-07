@@ -26,7 +26,7 @@ class Layer:
 LAYERS = [
     Layer(1, "Структура и долг", "С какой скоростью экономика может расти без перегрева и во что обходится долг?",
           None, "views/liquidity.py"),
-    Layer(2, "Политика ФРС", "ФРС сейчас тормозит экономику или разгоняет её?", None, "views/rates.py"),
+    Layer(2, "Политика ФРС", "ФРС сейчас тормозит экономику или разгоняет её?", "views/v2/policy.py"),
     Layer(3, "Рыночные ставки и ожидания", "Что рынок облигаций ждёт от ставок и инфляции?", None, "views/rates.py"),
     Layer(4, "Финансовые условия и кредит", "Легко ли и дёшево ли сейчас получить деньги?", "views/v2/credit.py"),
     Layer(5, "Рост и риск рецессии", "Экономика ускоряется или замедляется?", None, "views/regime.py"),
@@ -37,7 +37,9 @@ BY_NUM = {l.num: l for l in LAYERS}
 
 # Метки сигнала: тип по времени и надёжность (насколько сигнал проверен вне выборки)
 TIMING = {"опережающий": "blue", "совпадающий": "violet", "запаздывающий": "gray"}
-RELIABILITY = {"проверен вне выборки": "green", "спорный": "orange", "нарратив": "red"}
+RELIABILITY = {"проверен вне выборки": "green", "проверен на истории": "green", "спорный": "orange",
+               "нарратив": "red"}
+HELP_PAGE = "views/v2/help.py"
 
 
 def chain_strip(current: int) -> str:
@@ -47,9 +49,16 @@ def chain_strip(current: int) -> str:
 
 def layer_header(num: int, lead: str) -> None:
     """Заголовок слоя: номер, место в цепочке и короткая вводная. Ответ слоя — в takeaway() под ним."""
-    st.caption(f"Слой {num} из {len(LAYERS)} · " + chain_strip(num))
+    left, right = st.columns([5, 1], vertical_alignment="bottom")
+    left.caption(f"Слой {num} из {len(LAYERS)} · " + chain_strip(num))
+    with right:
+        help_link("Как читать экран")
     st.title(BY_NUM[num].title)
     st.markdown(lead)
+
+
+def help_link(label: str = "Справка") -> None:
+    st.page_link(HELP_PAGE, label=label, icon="❓")
 
 
 def takeaway(text: str, tone: str = "neutral") -> None:
@@ -64,8 +73,9 @@ def tags(timing: str, reliability: str) -> None:
     st.markdown(f":{TIMING[timing]}-badge[{timing}] :{RELIABILITY[reliability]}-badge[{reliability}]",
                 help="**Опережающий** меняется раньше экономики, **совпадающий** — вместе с ней, "
                      "**запаздывающий** — позже.  \n**Проверен вне выборки** — сигнал работал на данных, "
-                     "которых не видели авторы модели; **спорный** — исследования расходятся; "
-                     "**нарратив** — популярная история без строгой проверки.")
+                     "которых не видели авторы модели; **проверен на истории** — связь видна в прошлых данных, "
+                     "но строгого теста вне выборки нет; **спорный** — исследования расходятся; "
+                     "**нарратив** — популярная история без строгой проверки.  \nПодробнее — в «Справке».")
 
 
 @contextmanager

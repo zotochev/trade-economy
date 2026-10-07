@@ -36,6 +36,9 @@ FED_FILES = {
         "House Prices": "FCIG_HOUSE", "Dollar": "FCIG_USD"},
 }
 FED_SCALE = {"ebp_prob": 100}  # вероятность в файле — доля, храним в %
+HLW_URL = ("https://www.newyorkfed.org/medialibrary/media/research/economists/williams/data/"
+           "Holston_Laubach_Williams_current_estimates.xlsx")
+HLW_COLS = {2: "trend_g_hlw", 10: "rstar_hlw", 14: "gap_hlw"}  # колонки США на листе «HLW Estimates»
 NY = ZoneInfo("America/New_York")
 MARKET_CLOSE_HOUR = 17  # после 17:00 по Нью-Йорку дневной бар считаем закрытым
 
@@ -129,6 +132,15 @@ def _fetch_fed(keys: list[str]) -> dict[str, pd.Series]:
     return out
 
 
+def _fetch_nyfed(keys: list[str]) -> dict[str, pd.Series]:
+    """Оценки модели Холстона–Лаубаха–Уильямса (ФРБ Нью-Йорка): r*, трендовый рост, разрыв выпуска."""
+    raw = requests.get(HLW_URL, timeout=60).content
+    df = pd.read_excel(io.BytesIO(raw), sheet_name="HLW Estimates", header=None, skiprows=6)
+    df.index = pd.to_datetime(df[0], errors="coerce")
+    df = df[df.index.notna()]
+    return {key: pd.to_numeric(df[col], errors="coerce") for col, key in HLW_COLS.items()}
+
+
 # ---------- публичный API ----------
 
 def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateResult]:
@@ -151,7 +163,8 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
         results += list(ex.map(one_fred, by_src.get("fred", [])))
 
     # yfinance, Шиллер и файлы ФРС отдают несколько рядов одним запросом
-    for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed)):
+    for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed),
+                       ("nyfed", _fetch_nyfed)):
         ks = by_src.get(src, [])
         if not ks:
             continue

@@ -381,3 +381,27 @@ def contrib_chart(parts: pd.DataFrame, total: pd.Series, units: str = "п.п.",
     fig.update_layout(barmode="relative", bargap=0.05, hovermode="x unified")
     fig.update_yaxes(ticksuffix=" " + units)
     return fig
+
+
+def band_chart(lines: dict[str, pd.Series], band: tuple[pd.Series, pd.Series, str], units: str = "%",
+               recessions: list[tuple] | None = None, height: int = 400) -> go.Figure:
+    """Линии и полупрозрачная полоса (нижняя, верхняя граница, подпись) — например, правило с диапазоном r*."""
+    mode = theme()
+    c = PALETTE[mode]
+    low, high, label = band
+    fig = go.Figure()
+    _recession_rects(fig, recessions, min(s.index[0] for s in lines.values()))
+    fig.add_trace(go.Scatter(x=high.index, y=high.values, mode="lines", line=dict(width=0), hoverinfo="skip",
+                             showlegend=False))
+    fig.add_trace(go.Scatter(x=low.index, y=low.values, mode="lines", line=dict(width=0), fill="tonexty",
+                             fillcolor="rgba(235,104,52,0.15)" if mode == "light" else "rgba(217,89,38,0.2)",
+                             name=label, hoverinfo="skip"))
+    for i, (name, s) in enumerate(lines.items()):
+        fig.add_trace(go.Scatter(x=s.index, y=s.values, name=name, mode="lines",
+                                 line=dict(width=2.5 if i == 0 else 2, color=c[i],
+                                           dash="solid" if i == 0 else "dot" if i > 1 else "solid"),
+                                 hovertemplate="%{y:.2f} " + units + "<extra>" + name + "</extra>"))
+    fig.add_hline(y=0, line_width=1, line_color=GRID[mode])
+    _base_layout(fig, height, legend=True)
+    fig.update_layout(hovermode="x unified")
+    return fig
