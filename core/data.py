@@ -40,6 +40,7 @@ HLW_URL = ("https://www.newyorkfed.org/medialibrary/media/research/economists/wi
            "Holston_Laubach_Williams_current_estimates.xlsx")
 HLW_COLS = {2: "trend_g_hlw", 10: "rstar_hlw", 14: "gap_hlw"}  # колонки США на листе «HLW Estimates»
 CURVE_PROB_URL = "https://www.newyorkfed.org/medialibrary/media/research/capital_markets/allmonth.xls"
+GSCPI_URL = "https://www.newyorkfed.org/medialibrary/research/interactives/gscpi/downloads/gscpi_data.xlsx"
 NY = ZoneInfo("America/New_York")
 MARKET_CLOSE_HOUR = 17  # после 17:00 по Нью-Йорку дневной бар считаем закрытым
 
@@ -134,7 +135,8 @@ def _fetch_fed(keys: list[str]) -> dict[str, pd.Series]:
 
 
 def _fetch_nyfed(keys: list[str]) -> dict[str, pd.Series]:
-    """Файлы ФРБ Нью-Йорка: оценки HLW (r*, трендовый рост, разрыв выпуска) и вероятность рецессии по кривой."""
+    """Файлы ФРБ Нью-Йорка: оценки HLW (r*, трендовый рост, разрыв выпуска), вероятность рецессии по кривой
+    и индекс давления в цепочках поставок (GSCPI)."""
     out = {}
     if set(HLW_COLS.values()) & set(keys):
         raw = requests.get(HLW_URL, timeout=60).content
@@ -149,6 +151,13 @@ def _fetch_nyfed(keys: list[str]) -> dict[str, pd.Series]:
         # и на первое число — как у остальных месячных рядов.
         date = pd.to_datetime(df["Date"]).dt.to_period("M").dt.to_timestamp() - pd.DateOffset(months=12)
         out["curve_prob"] = pd.Series(pd.to_numeric(df["Rec_prob"], errors="coerce").values * 100, index=date)
+    if "GSCPI" in keys:
+        raw = requests.get(GSCPI_URL, timeout=60).content
+        df = pd.read_excel(io.BytesIO(raw), sheet_name="GSCPI Monthly Data", header=None, usecols=[0, 1])
+        date = pd.to_datetime(df[0], format="%d-%b-%Y", errors="coerce")
+        df = df[date.notna()]
+        out["GSCPI"] = pd.Series(pd.to_numeric(df[1], errors="coerce").values,
+                                 index=date[date.notna()].dt.to_period("M").dt.to_timestamp())
     return out
 
 

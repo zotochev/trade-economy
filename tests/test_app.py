@@ -134,6 +134,7 @@ check_layer("views/v2/policy.py", ["stance", "rules", "market", "balance"], "п�
 check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve"], "рыночные ставки")
 check_layer("views/v2/credit.py", ["fcig", "spread", "banks", "recession"], "финансовые условия")
 check_layer("views/v2/growth.py", ["speed", "slack", "labor", "risk"], "рост и риск рецессии")
+check_layer("views/v2/inflation.py", ["level", "breadth", "mix", "phillips"], "инфляция")
 
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception

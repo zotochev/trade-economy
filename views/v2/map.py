@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import curve, growth, learn, policy, ui
+from core import curve, growth, inflation, learn, policy, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -74,16 +74,11 @@ def answer(num: int) -> tuple[str, str, str]:
                       f"трендовом росте ≈ {ui.load('trend_g_hlw').iloc[-1]:.1f}%. Моделей рецессии в тревоге: "
                       f"{alarms} из {len(table)}.", color)
     if num == 6:
-        core = yoy_pct(ui.load("PCEPILFE")).dropna()
-        now, year = float(core.iloc[-1]), ago(core, 12)
-        trend = "снижается" if now < year - 0.2 else "растёт" if now > year + 0.2 else "стоит на месте"
-        if now > 2.5:
-            head, color = f"Инфляция выше цели ФРС и {trend}", "orange"
-        elif now < 1.5:
-            head, color = f"Инфляция ниже цели ФРС и {trend}", "blue"
-        else:
-            head, color = "Инфляция у цели ФРС", "green"
-        return (head, f"Базовая инфляция PCE {now:.1f}% г/г (цель 2%), год назад {year:.1f}%.", color)
+        head, color, level = inflation.verdict(ui.load)
+        core = inflation.core_pce(ui.load)
+        return (head, f"Устойчивая инфляция ≈ {level:.1f}% (медиана четырёх мер) при цели 2%. Базовая PCE "
+                      f"{core.iloc[-1]:.1f}% за год, темп за 3 месяца {inflation.three_month(ui.load).iloc[-1]:.1f}%.",
+                color)
     cape = ui.load("CAPE").dropna()
     spx = ui.load("^GSPC")
     above = float(spx.iloc[-1]) > float(spx.rolling(200).mean().iloc[-1])
