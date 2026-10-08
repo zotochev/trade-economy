@@ -5,7 +5,7 @@
 import pandas as pd
 import streamlit as st
 
-from core import curve, growth, inflation, learn, markets, policy, ui
+from core import curve, growth, inflation, learn, markets, policy, structure, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -27,16 +27,11 @@ def ago(s: pd.Series, months: int) -> float:
 def answer(num: int) -> tuple[str, str, str]:
     """Ответ слоя на его вопрос: (вывод одной фразой, числа-обоснование, цвет)."""
     if num == 1:
-        gdp = ui.load("GDP")
-        debt = ui.load("GFDEGDQ188S")
-        rate = (ui.load("A091RC1Q027SBEA") / (debt / 100 * gdp) * 100).dropna()
-        g = yoy_pct(gdp).dropna()
-        gap = float(rate.iloc[-1] - g.iloc[-1])
-        head = ("Долг дешевле роста: экономика сама «перерастает» долг" if gap < 0 else
-                "Долг дороже роста: долговая нагрузка растёт сама по себе")
-        return (head, f"Госдолг {debt.iloc[-1]:.0f}% ВВП. Средняя ставка по долгу {rate.iloc[-1]:.1f}% против "
-                      f"роста номинального ВВП {g.iloc[-1]:.1f}% (r − g = {gap:+.1f} п.п.).",
-                "green" if gap < 0 else "orange")
+        head, color, x = structure.verdict(ui.load)
+        return (head, f"Госдолг {x.d:.0f}% ВВП. Средняя ставка по долгу {x.r_avg:.1f}%, по новым 10-летним займам "
+                      f"{x.r_new:.1f}% против долгосрочного номинального роста ≈ {x.g:.1f}%. Потолок реального "
+                      f"роста по CBO {structure.cbo_outlook(ui.load):.1f}% в год, нейтральная ставка r* ≈ "
+                      f"{float(ui.load('rstar_hlw').iloc[-1]):.1f}% (HLW).", color)
     if num == 2:
         ffr = float(ui.load("DFF").iloc[-1])
         core = float(yoy_pct(ui.load("PCEPILFE")).dropna().iloc[-1])

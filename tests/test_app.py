@@ -130,6 +130,7 @@ def check_layer(page: str, examples: list[str], name: str) -> None:
     print(f"{name} ок")
 
 
+check_layer("views/v2/structure.py", ["supply", "rstar", "debt", "private"], "структура и долг")
 check_layer("views/v2/policy.py", ["stance", "rules", "market", "balance"], "политика ФРС")
 check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve"], "рыночные ставки")
 check_layer("views/v2/credit.py", ["fcig", "spread", "banks", "recession"], "финансовые условия")

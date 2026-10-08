@@ -31,6 +31,7 @@ if version == NEW:
     nav = {
         "Модель экономики": [
             st.Page("views/v2/map.py", title="Карта: цепочка слоёв", icon="🗺️", default=True),
+            st.Page("views/v2/structure.py", title="1. Структура и долг", icon="🏗️"),
             st.Page("views/v2/policy.py", title="2. Политика ФРС", icon="🏛️"),
             st.Page("views/v2/market_rates.py", title="3. Рыночные ставки", icon="📉"),
             st.Page("views/v2/credit.py", title="4. Финансовые условия", icon="💳"),
