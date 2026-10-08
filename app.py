@@ -38,14 +38,15 @@ if version == NEW:
             st.Page("views/v2/growth.py", title="5. Рост и риск рецессии", icon="⚙️"),
             st.Page("views/v2/inflation.py", title="6. Инфляция", icon="🔥"),
             st.Page("views/v2/markets.py", title="7. Рынки", icon="💹"),
-            st.Page("views/sectors.py", title="7а. Сектора и факторы", icon="🏭"),
-            st.Page("views/stock.py", title="7б. Отдельная акция", icon="🔬"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
-        "Пока из старой версии": [p for p in old_pages(with_cockpit=False)
-                                  if p.title not in ("Акции и сектора", "Отдельная акция")],
+        "Подробнее о рынках": [
+            st.Page("views/sectors.py", title="Сектора и факторы", icon="🏭"),
+            st.Page("views/stock.py", title="Отдельная акция", icon="🔬"),
+            st.Page("views/regime.py", title="Режимы экономики", icon="🧭"),
+        ],
         "Справочник": reference,
     }
 else:
     nav = old_pages() + reference
-st.navigation(nav).run()
+st.navigation(nav, expanded=True).run()

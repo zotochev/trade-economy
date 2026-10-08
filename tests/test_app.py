@@ -134,12 +134,15 @@ def check_layer(page: str, examples: list[str], name: str) -> None:
 
 check_layer("views/v2/structure.py", ["supply", "rstar", "debt", "private"], "структура и долг")
 check_layer("views/v2/policy.py", ["stance", "rules", "market", "balance"], "политика ФРС")
-check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve"], "рыночные ставки")
+check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve", "bonds"], "рыночные ставки")
 check_layer("views/v2/credit.py", ["fcig", "spread", "banks", "recession"], "финансовые условия")
 check_layer("views/v2/growth.py", ["speed", "slack", "labor", "risk"], "рост и риск рецессии")
 check_layer("views/v2/inflation.py", ["level", "breadth", "mix", "phillips"], "инфляция")
 check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рынки")
 
+for page in ["views/sectors.py", "views/stock.py", "views/regime.py"]:  # «Подробнее о рынках»
+    at.switch_page(page).run()
+    assert not at.exception, (page, at.exception)
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception
 at.text_input(key="glossary_q").set_value("ставка").run()

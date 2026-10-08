@@ -6,7 +6,7 @@ import streamlit as st
 
 from core import learn, markets, ui
 from core import valuation as V
-from core.charts import bucket_chart, cape_scatter, dual_axis_chart, grouped_bars, line_chart
+from core.charts import bucket_chart, cape_scatter, dual_axis_chart, grouped_bars, line_chart, xy_lines
 from core.learn import Example
 from core.regime import monthly_returns, treasury10_returns
 from core.regime_data import summary
@@ -125,8 +125,41 @@ def ex_since2023():
         f"перекрывает премия — величина, которую нельзя наблюдать напрямую.")
 
 
+def ex_gordon():
+    g_hist = markets.real_earnings_growth(ui.load)
+    s1, s2, s3 = st.columns(3)
+    ry = s1.slider("Реальная ставка (TIPS 10 лет), %", -1.0, 5.0, round(float(real10.iloc[-1]), 2), 0.05,
+                   key="gp_r", help="По умолчанию — текущая.")
+    pr = s2.slider("Премия за риск акций, п.п.", 0.0, 8.0, round(float(erp_long.median()), 1), 0.1, key="gp_p",
+                   help=f"По умолчанию — медиана с 1881 г. ({erp_long.median():.1f}).")
+    g = s3.slider("Реальный рост прибыли, % в год", 0.0, 4.0, round(g_hist, 1), 0.1, key="gp_g",
+                  help=f"По умолчанию — исторический рост 10-летней средней реальной прибыли ({g_hist:.1f}%).")
+    now = float(cape.iloc[-1])
+    fair = V.fair_pe(ry, pr, g)
+    m = st.columns(3)
+    m[0].metric("Справедливый P/E (к 10-летней прибыли)", f"{fair:.1f}" if np.isfinite(fair) else "∞",
+                help="Сравнивается с CAPE: модель про устойчивую, а не пиковую прибыль.")
+    m[1].metric("CAPE против справедливого", f"{(now / fair - 1) * 100:+.0f}%" if np.isfinite(fair) else "—")
+    m[2].metric("Премия, которую закладывает рынок", f"{V.implied_premium(now, ry, g):+.2f} п.п.",
+                help="1/CAPE + g − ставка: какая премия получается при текущем CAPE, выбранных ставке и росте.")
+    grid = np.linspace(-1, 5, 121)
+
+    def line(growth: float) -> list:
+        return [pe if (pe := V.fair_pe(x, pr, growth)) <= 80 else None for x in grid]
+
+    st.plotly_chart(xy_lines({f"Стоимостные компании (рост {max(g - 1, 0):.1f}%)": (grid, line(max(g - 1, 0))),
+                              f"Рынок (рост {g:.1f}%)": (grid, line(g)),
+                              f"Компании роста (рост {g + 1:.1f}%)": (grid, line(g + 1))},
+                             "Реальная ставка, %", "Справедливый P/E",
+                             marker=(ry, fair, "выбрано") if fair <= 80 else None), width="stretch")
+    st.markdown("Модель Гордона: P/E = 1 / (r − g). Чем выше ожидаемый рост, тем круче линия: компании роста "
+                "теряют от роста ставок сильнее — у них «длинная дюрация», как у 30-летних облигаций. Поэтому 2022 "
+                "год так ударил по технологиям.")
+
+
 learn.examples([Example("На коротком сроке — мультипликатор, на длинном — прибыль", ex_horizon),
                 Example("2022: ставка выросла — мультипликатор упал", ex_2022),
+                Example("Песочница: справедливый P/E и ставки", ex_gordon),
                 Example("2023–2026: ставки высокие, а акции дорожают", ex_since2023, normal=False)], key="identity")
 
 # ---------- 2. дороги ли акции ----------
@@ -144,7 +177,7 @@ with learn.how_it_works():
 - **Две версии.** TIPS торгуются с 2003 года; для длинной истории реальную ставку приходится оценивать как
   10-летнюю ставку минус инфляцию за прошлые 10 лет.
 - **Где ошибается.** Если прибыль растёт быстрее обычного (выше маржа, ниже налоги), высокий CAPE оправдан —
-  так было в 2010-х. Подробные таблицы — на экране «Оценка рынка».
+  так было в 2010-х.
 """)
 
 
@@ -178,7 +211,21 @@ def ex_2010s():
         f"до 21%, маржа крупнейших компаний выросла. CAPE — про средний исход, а не гарантия.")
 
 
+def ex_buffett():
+    b, pf = markets.buffett(ui.load), markets.profit_share(ui.load)
+    st.plotly_chart(dual_axis_chart(("Капитализация компаний, % ВВП", cut(b, years), "%"),
+                                    ("Прибыль компаний до налогов, % ВВП", cut(pf, years), "%"), recessions=rec),
+                    width="stretch")
+    st.markdown(
+        f"Индикатор Баффета — стоимость акций компаний к ВВП: сейчас {b.iloc[-1]:.0f}% при медиане с 1945 года "
+        f"{b.median():.0f}%. (Здесь версия по финансовым счетам ФРС — она включает и непубличные компании, "
+        f"поэтому выше популярных версий по биржевым индексам; сравнивать стоит с её же историей.) Его можно разложить в то же тождество: капитализация / ВВП = мультипликатор × "
+        f"(прибыль / ВВП). Часть роста — честная: прибыль компаний сейчас {pf.iloc[-1]:.1f}% ВВП против средней "
+        f"{pf.mean():.1f}% с 1947 года. Вопрос, удержится ли такая маржа, — и есть спор «дорог ли рынок».")
+
+
 learn.examples([Example("Дорогой рынок → скромная доходность на 10 лет", ex_cape),
+                Example("Индикатор Баффета и маржа прибыли", ex_buffett),
                 Example("2010-е: дорогой рынок всё равно дал много", ex_2010s, normal=False)], key="value")
 
 # ---------- 3. акции и облигации ----------
@@ -290,7 +337,7 @@ with cols[0]:
 with cols[1]:
     st.page_link("views/stock.py", label="Отдельная акция", icon="🔬")
 with cols[2]:
-    st.page_link("views/regime.py", label="Режим экономики подробно", icon="🧭")
+    st.page_link("views/regime.py", label="Режимы экономики", icon="🧭")
 
 learn.next_steps([4, 2], "Цены акций и жилья возвращаются в финансовые условия (слой 4): богатеющие семьи "
                          "тратят больше, дешёвый капитал помогает компаниям. ФРС тоже это видит (слой 2).")

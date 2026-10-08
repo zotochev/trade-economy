@@ -62,6 +62,24 @@ def erp_long(load: Load) -> pd.Series:
     return (100 / load("CAPE") - (load("Rate GS10") - infl10)).dropna()
 
 
+def real_earnings_growth(load: Load) -> float:
+    """Исторический рост 10-летней средней реальной прибыли S&P, % в год — g по умолчанию для модели Гордона."""
+    cpi = load("CPI")
+    e = (load("E") / cpi * cpi.iloc[-1]).dropna().rolling(120).mean().dropna()
+    years = (e.index[-1] - e.index[0]).days / 365.25
+    return float(((e.iloc[-1] / e.iloc[0]) ** (1 / years) - 1) * 100)
+
+
+def buffett(load: Load) -> pd.Series:
+    """Капитализация всех компаний США к ВВП, %."""
+    return (load("BOGZ1LM893064105Q") / 1000 / load("GDP") * 100).dropna()
+
+
+def profit_share(load: Load) -> pd.Series:
+    """Прибыль корпораций до налогов к ВВП, %."""
+    return (load("CP") / load("GDP") * 100).dropna()
+
+
 def stock_bond_corr(load: Load, months: int = 36) -> pd.Series:
     """Скользящая корреляция месячных доходностей S&P 500 и 10-летних гособлигаций."""
     df = pd.concat({"s": monthly_returns(load("^GSPC")), "b": treasury10_returns(load)}, axis=1).dropna()

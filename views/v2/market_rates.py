@@ -1,10 +1,12 @@
 """Слой 3. Рыночные ставки и ожидания: как короткая ставка ФРС превращается в длинные ставки,
 верит ли рынок в цель по инфляции и что говорит кривая доходности."""
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core import curve, learn, ui
-from core.charts import contrib_chart, curve_chart, dual_axis_chart, grouped_bars, line_chart
+from core import bonds, curve, learn, ui
+from core.charts import (contrib_chart, curve_chart, dual_axis_chart, grouped_bars, hbar_chart, line_chart,
+                         price_yield_chart)
 from core.learn import Example
 from core.transforms import cut
 
@@ -267,6 +269,70 @@ def ex_2022_curve():
 learn.examples([Example("Инверсия перед рецессиями 1990–2020", ex_before_rec),
                 Example("2022–2024: самая долгая инверсия без рецессии", ex_2022_curve, normal=False)],
                key="curve")
+
+# ---------- 4. цена облигаций ----------
+st.header("4. Что ставки делают с ценой облигаций")
+st.markdown("Облигация — обещание платить купоны и вернуть номинал. Выросли рыночные ставки — старые облигации с "
+            "низким купоном дешевеют. Насколько — зависит от **срока**: чем он длиннее, тем сильнее удар.")
+learn.tags("совпадающий", "проверен на истории")
+etf = {"TLT (20+ лет)": "TLT", "IEF (7–10 лет)": "IEF", "SHY (1–3 года)": "SHY"}
+start = max(cut(ui.load(k), years).index[0] for k in etf.values())
+st.plotly_chart(line_chart({n: ui.load(k)[start:] / ui.load(k)[start:].iloc[0] * 100 for n, k in etf.items()},
+                           recessions=rec, height=320), width="stretch")
+st.caption("Цена облигационных ETF с реинвестированием купонов, начало периода = 100.")
+with learn.how_it_works():
+    st.markdown("""
+- **Дюрация** — на сколько процентов меняется цена облигации, если ставка сдвинулась на 1 п.п. У 2-летней
+  облигации она около 2, у 30-летней — около 17.
+- **Выпуклость.** Зависимость цены от ставки — не прямая, а дуга: при больших сдвигах цена падает меньше и
+  растёт больше, чем обещает дюрация.
+- **Связь с цепочкой.** Длинные облигации — ставка на снижение ставок (слой 2) и инфляции (слой 6). Короткие
+  почти не рискуют ценой, но доход по ним меняется вместе со ставкой ФРС.
+""")
+
+
+def ex_2022_bonds():
+    rows = {n: (ui.load(k)["2022-12"].iloc[-1] / ui.load(k)["2021-12"].iloc[-1] - 1) * 100 for n, k in etf.items()}
+    st.plotly_chart(hbar_chart(list(rows), list(rows.values()), height=200), width="stretch")
+    st.markdown(
+        f"За 2022 год 10-летняя ставка выросла с {ui.load('DGS10')['2021-12'].mean():.1f}% до "
+        f"{ui.load('DGS10')['2022-12'].mean():.1f}%. Длинные облигации потеряли {-rows['TLT (20+ лет)']:.0f}% — "
+        f"как акции в медвежий рынок, короткие — лишь {-rows['SHY (1–3 года)']:.0f}%. «Надёжная» облигация "
+        f"надёжна только в том, что вернёт номинал в срок; до срока её цена ходит вместе со ставками.")
+
+
+def ex_sandbox():
+    s1, s2, s3, s4 = st.columns(4)
+    term = s1.slider("Срок, лет", 1, 30, 10, key="bs_term")
+    coupon = s2.slider("Купон, % в год", 0.0, 10.0, round(y10 * 4) / 4, 0.25, key="bs_coupon")
+    ytm = s3.slider("Рыночная доходность, %", 0.0, 12.0, round(y10, 2), 0.05, key="bs_ytm",
+                    help="По умолчанию — текущая доходность 10-летних казначейских облигаций США.")
+    shock = s4.slider("Сдвиг ставки, п.п.", -3.0, 3.0, 1.0, 0.25, key="bs_shock")
+    b = bonds.stats(coupon, term, ytm)
+    p1 = bonds.price(coupon, term, ytm + shock)
+    m = st.columns(4)
+    m[0].metric("Цена сейчас", f"{b.price:.2f}", help="За 100 номинала. Купон выше доходности → цена выше 100.")
+    m[1].metric("Дюрация", f"{b.modified_duration:.1f}", help="На сколько % меняется цена при сдвиге ставки на 1 п.п.")
+    m[2].metric(f"Цена после сдвига {shock:+.2f} п.п.", f"{p1:.2f}", f"{(p1 / b.price - 1) * 100:+.1f}%")
+    m[3].metric("Оценка по дюрации", f"{-b.modified_duration * shock:+.1f}%",
+                help="−дюрация × сдвиг. Расхождение с точным числом — выпуклость.")
+    left, right = st.columns([3, 2], gap="large")
+    with left:
+        grid = np.linspace(max(0.0, min(ytm, ytm + shock) - 3), max(ytm, ytm + shock) + 3, 120)
+        st.plotly_chart(price_yield_chart(grid, [bonds.price(coupon, term, y) for y in grid], ytm, b.price,
+                                          ytm + shock, p1), width="stretch")
+    with right:
+        st.markdown(f"**Тот же сдвиг {shock:+.2f} п.п. для разных сроков**")
+        now = curve.curve_at(ui.load, min(ui.load(k).index[-1] for k in curve.MATURITIES))
+        terms = [2, 5, 10, 30]
+        st.plotly_chart(hbar_chart([f"{t} {'года' if t == 2 else 'лет'}" for t in terms],
+                                   [bonds.price_change_pct(now[t], t, now[t], shock) for t in terms], height=230),
+                        width="stretch")
+        st.caption("Облигации по номиналу с купоном, равным текущей доходности своего срока.")
+
+
+learn.examples([Example("2022: длинные облигации потеряли треть", ex_2022_bonds),
+                Example("Песочница: цена облигации и ставка", ex_sandbox)], key="bonds")
 
 learn.next_steps([4], "Длинные ставки становятся ценой ипотеки, корпоративного кредита и капитала для "
                       "компаний — это слой финансовых условий.")
