@@ -3,7 +3,7 @@ import streamlit as st
 
 st.set_page_config(page_title="Модель экономики", page_icon="📈", layout="wide")
 
-OLD, NEW = "Старая", "Новая (в разработке)"
+NEW, OLD = "Новая", "Старая"
 
 
 def old_pages(with_cockpit: bool = True) -> list:
@@ -24,9 +24,9 @@ reference = [
     st.Page("views/data_status.py", title="Данные", icon="🗄️"),
 ]
 
-version = st.sidebar.radio("Версия дашборда", [OLD, NEW], key="version",
-                           help="Новая версия строит модель экономики как цепочку слоёв. "
-                                "Пока она собирается, старые экраны остаются доступны.")
+version = st.sidebar.radio("Версия дашборда", [NEW, OLD], key="version",
+                           help="Новая версия строит модель экономики как цепочку из семи слоёв. "
+                                "Старая — прежняя панель приборов и тематические экраны.")
 if version == NEW:
     nav = {
         "Модель экономики": [

@@ -12,7 +12,9 @@ from core.series import CATALOG, GROUPS
 ROOT = Path(__file__).resolve().parent.parent
 
 at = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
-assert not at.exception, at.exception  # панель
+assert not at.exception, at.exception  # по умолчанию — новая версия, карта
+at.radio(key="version").set_value("Старая").run()
+assert not at.exception, at.exception  # панель старой версии
 
 from core import data
 from core.indicators import INDICATORS, evaluate
@@ -102,7 +104,7 @@ assert not at.exception, at.exception
 print(f"OK: {len(CATALOG)} рядов, страница данных — {len(at.dataframe[0].value)} строк")
 
 # ---------- новая версия: цепочка слоёв ----------
-at.radio(key="version").set_value("Новая (в разработке)").run()
+at.radio(key="version").set_value("Новая").run()
 assert not at.exception, at.exception
 at.switch_page("views/v2/map.py").run()
 assert not at.exception, at.exception
