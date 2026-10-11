@@ -280,6 +280,8 @@ start = max(cut(ui.load(k), years).index[0] for k in etf.values())
 st.plotly_chart(line_chart({n: ui.load(k)[start:] / ui.load(k)[start:].iloc[0] * 100 for n, k in etf.items()},
                            recessions=rec, height=320), width="stretch")
 st.caption("Цена облигационных ETF с реинвестированием купонов, начало периода = 100.")
+st.page_link("views/bond_lab.py", label="Лаборатория облигаций: подвигайте все параметры сами или оцените "
+                                        "реальную облигацию", icon="🧪")
 with learn.how_it_works():
     st.markdown("""
 - **Дюрация** — на сколько процентов меняется цена облигации, если ставка сдвинулась на 1 п.п. У 2-летней

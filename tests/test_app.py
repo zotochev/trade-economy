@@ -143,6 +143,28 @@ check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рын
 for page in ["views/sectors.py", "views/stock.py", "views/regime.py"]:  # «Подробнее о рынках»
     at.switch_page(page).run()
     assert not at.exception, (page, at.exception)
+
+# лаборатория облигаций: все примеры, все типы, ориентиры по рейтингу, режим реальной облигации
+at.switch_page("views/bond_lab.py").run()
+assert not at.exception, at.exception
+for b in [b for b in at.button if b.key and b.key.startswith("bl_p_")]:
+    b.click().run()
+    assert not at.exception, (b.key, at.exception)
+for kind in ["fixed", "zero", "floating", "tips"]:
+    at.selectbox(key="bl_kind").set_value(kind).run()
+    assert not at.exception, (kind, at.exception)
+for r in at.selectbox(key="bl_rating").options:
+    at.selectbox(key="bl_rating").set_value(r).run()
+    assert not at.exception, (r, at.exception)
+at.slider(key="bl_years").set_value(1.0).run()
+at.slider(key="bl_delta").set_value(-2.0).run()
+assert not at.exception, at.exception
+at.segmented_control(key="bl_mode").set_value("Реальная облигация").run()
+assert not at.exception, at.exception
+for kind in ["fixed", "zero", "tips"]:
+    at.selectbox(key="bl_rkind").set_value(kind).run()
+    assert not at.exception, ("реальная", kind, at.exception)
+print("лаборатория облигаций ок")
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception
 at.text_input(key="glossary_q").set_value("ставка").run()

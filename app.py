@@ -41,6 +41,7 @@ if version == NEW:
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
         "Подробнее о рынках": [
+            st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),
             st.Page("views/sectors.py", title="Сектора и факторы", icon="🏭"),
             st.Page("views/stock.py", title="Отдельная акция", icon="🔬"),
             st.Page("views/regime.py", title="Режимы экономики", icon="🧭"),
