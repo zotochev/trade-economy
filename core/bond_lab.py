@@ -191,6 +191,15 @@ def implied_spread(b: Bond, clean: float) -> float:
     return (lo + hi) / 2
 
 
-def implied_default(spread: float, recovery: float) -> float:
+def implied_default(b: Bond, recovery: float) -> float:
     """Какую вероятность дефолта за год закладывает спред, если весь он — плата за ожидаемые потери, %."""
-    return max(spread, 0.0) / max(1 - recovery / 100, 0.01)
+    if b.spread <= 0:
+        return 0.0
+    lo, hi = 0.0, 99.0
+    for _ in range(60):
+        mid = (lo + hi) / 2
+        if credit(b, mid, recovery).expected_loss < b.spread:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2

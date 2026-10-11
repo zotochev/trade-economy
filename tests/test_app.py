@@ -159,14 +159,25 @@ for r in at.selectbox(key="bl_rating").options:
 at.slider(key="bl_years").set_value(1.0).run()
 at.slider(key="bl_delta").set_value(-2.0).run()
 assert not at.exception, at.exception
-at.segmented_control(key="bl_mode").set_value("Реальная облигация").run()
-assert not at.exception, at.exception
+# от спреда к цене и обратно: цифры не должны скакать, настройки — сбрасываться
 at.slider(key="bl_shock").set_value(2.0).run()
+at.selectbox(key="bl_kind").set_value("fixed").run()
+at.slider(key="bl_spread").set_value(1.5).run()
+at.segmented_control(key="bl_known").set_value("Цена → считаем доходность").run()
+assert not at.exception, at.exception
+assert abs(float(at.metric[2].value.split()[0]) - 1.5) < 0.02, at.metric[2].value  # спред восстановлен из цены
+at.number_input(key="bl_price").set_value(90.0).run()
+at.segmented_control(key="bl_term").set_value("Датой погашения").run()
 at.slider(key="bl_delta").set_value(-1.0).run()
-assert at.slider(key="bl_shock").value == 2.0, "сдвиг ставки сбросился в режиме реальной облигации"
-for kind in ["fixed", "zero", "tips"]:
-    at.selectbox(key="bl_rkind").set_value(kind).run()
-    assert not at.exception, ("реальная", kind, at.exception)
+assert not at.exception, at.exception
+assert at.slider(key="bl_shock").value == 2.0, "сдвиг ставки сбросился"
+assert at.number_input(key="bl_price").value == 90.0, "цена сбросилась"
+for kind in ["zero", "tips", "floating"]:
+    at.selectbox(key="bl_kind").set_value(kind).run()
+    assert not at.exception, ("по цене", kind, at.exception)
+at.checkbox(key="bl_call").check().run()
+at.button(key="bl_mpd").click().run()
+assert not at.exception, at.exception
 print("лаборатория облигаций ок")
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception
