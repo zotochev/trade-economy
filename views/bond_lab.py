@@ -60,8 +60,10 @@ def apply_rating() -> None:
         st.session_state["bl_spread"], st.session_state["bl_pd"] = RATINGS[r]
 
 
-if "bl_kind" not in st.session_state:
-    apply(DEFAULTS)
+# Значения по умолчанию — только для отсутствующих ключей: Streamlit стирает состояние ползунков, которых не было
+# на экране (например, учебных в режиме реальной облигации), а заданные пользователем трогать нельзя.
+for k, v in DEFAULTS.items():
+    st.session_state.setdefault(f"bl_{k}", v)
 
 # ---------- шапка ----------
 left, right = st.columns([5, 1], vertical_alignment="bottom")

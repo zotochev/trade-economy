@@ -161,6 +161,9 @@ at.slider(key="bl_delta").set_value(-2.0).run()
 assert not at.exception, at.exception
 at.segmented_control(key="bl_mode").set_value("Реальная облигация").run()
 assert not at.exception, at.exception
+at.slider(key="bl_shock").set_value(2.0).run()
+at.slider(key="bl_delta").set_value(-1.0).run()
+assert at.slider(key="bl_shock").value == 2.0, "сдвиг ставки сбросился в режиме реальной облигации"
 for kind in ["fixed", "zero", "tips"]:
     at.selectbox(key="bl_rkind").set_value(kind).run()
     assert not at.exception, ("реальная", kind, at.exception)
