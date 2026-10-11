@@ -22,6 +22,13 @@ class Bond:
     rf: float = 4.0         # ставка гособлигаций того же срока
     spread: float = 0.0     # кредитный спред, п.п.
     breakeven: float = 2.3  # ожидаемая рынком инфляция (для TIPS)
+    comp: int = 0           # начислений процента в год при дисконтировании; 0 — как выплаты (США), 1 — годовое (РФ)
+    sched: tuple | None = None  # настоящий график: (годы, купоны, погашения, купон не объявлен, остаток номинала)
+    acc: float | None = None    # накопленный купон из биржи, % номинала
+
+    @property
+    def m(self) -> int:
+        return self.comp or self.freq
 
     @property
     def y(self) -> float:
@@ -30,10 +37,15 @@ class Bond:
         return base + self.spread
 
     def times(self) -> np.ndarray:
+        if self.sched:
+            return self.sched[0]
         n = max(int(np.ceil(self.years * self.freq - 1e-9)), 1)
         return self.years - (n - np.arange(1, n + 1)) / self.freq
 
     def coupons(self, shift: float = 0.0) -> np.ndarray:
+        if self.sched:
+            _, c, _, unknown, out = self.sched
+            return c + np.where(unknown, shift / self.freq * out / 100, 0.0)
         t = self.times()
         if self.kind == "zero":
             return np.zeros(len(t))
@@ -43,10 +55,18 @@ class Bond:
             return c
         return np.full(len(t), self.coupon / self.freq)
 
+    def principal(self) -> np.ndarray:
+        if self.sched:
+            return self.sched[2]
+        p = np.zeros(len(self.times()))
+        p[-1] = 100
+        return p
+
+    def outstanding(self) -> np.ndarray:
+        return self.sched[4] if self.sched else np.full(len(self.times()), 100.0)
+
     def flows(self, shift: float = 0.0) -> tuple[np.ndarray, np.ndarray]:
-        cf = self.coupons(shift).copy()
-        cf[-1] += 100
-        return self.times(), cf
+        return self.times(), self.coupons(shift) + self.principal()
 
 
 def discount(y: float, t, freq: int):
@@ -59,7 +79,7 @@ def grow(t_from: float, t_to: float, y: float, freq: int) -> float:
 
 def price(b: Bond, shift: float = 0.0) -> float:
     t, cf = b.flows(shift)
-    return float((cf * discount(b.y + shift, t, b.freq)).sum())
+    return float((cf * discount(b.y + shift, t, b.m)).sum())
 
 
 @dataclass(frozen=True)
@@ -74,9 +94,9 @@ class Stats:
 
 def stats(b: Bond) -> Stats:
     t, cf = b.flows()
-    pv = cf * discount(b.y, t, b.freq)
+    pv = cf * discount(b.y, t, b.m)
     p, up, dn = float(pv.sum()), price(b, H), price(b, -H)
-    annual = float(b.coupons().mean() * b.freq)
+    annual = b.coupon if b.sched else float(b.coupons().mean() * b.freq)
     return Stats(p, (dn - up) / (2 * p * H / 100), (dn + up - 2 * p) / (p * (H / 100) ** 2),
                  float((t * pv).sum() / p), annual / p * 100, float(pv[-1] / p * 100))
 
@@ -103,20 +123,22 @@ def horizon(b: Bond, hold: float, t_shock: float, delta: float) -> Horizon:
     p0 = price(b)
     t = b.times()
     before, after = b.coupons(), b.coupons(delta)
-    cpn = np.where((b.kind == "floating") & (t - 1 / b.freq >= t_shock), after, before)
+    moves = b.kind == "floating" or b.sched is not None  # у графика с биржи движутся только необъявленные купоны
+    cpn = np.where(moves & (t - 1 / b.freq >= t_shock), after, before)
     y0, y1 = b.y, b.y + delta
 
     def factor(s: float) -> float:  # рост денег от s до горизонта
         mid = min(max(t_shock, s), hold)
-        return grow(s, mid, y0, b.freq) * grow(max(mid, s), hold, y1, b.freq)
+        return grow(s, mid, y0, b.m) * grow(max(mid, s), hold, y1, b.m)
 
     got = t <= hold + 1e-9
-    flows = cpn + np.where(np.arange(len(t)) == len(t) - 1, 100, 0)
+    prin = b.principal()
+    flows = cpn + prin
     coupons = float(cpn[got].sum())
     reinvest = float(sum(f * (factor(s) - 1) for s, f in zip(t[got], flows[got])))
     y_sale = y1 if hold >= t_shock else y0
-    sale = float((flows[~got] * discount(y_sale, t[~got] - hold, b.freq)).sum())
-    principal = 100.0 if got[-1] else 0.0
+    sale = float((flows[~got] * discount(y_sale, t[~got] - hold, b.m)).sum())
+    principal = float(prin[got].sum())
     wealth = p0 + coupons + reinvest + (sale + principal - p0)
     return Horizon(coupons, reinvest, sale + principal - p0, wealth,
                    ((wealth / p0) ** (1 / hold) - 1) * 100 if hold > 0 else 0.0)
@@ -148,9 +170,9 @@ def credit(b: Bond, pd_annual: float, recovery: float) -> Credit:
     t, cf = b.flows()
     surv = (1 - pd_annual / 100) ** t
     prev = np.concatenate([[1.0], surv[:-1]])
-    expected_cf = cf * surv + recovery * (prev - surv)
+    expected_cf = cf * surv + recovery / 100 * b.outstanding() * (prev - surv)
     p0 = price(b)
-    exp = irr(p0, t, expected_cf, b.freq)
+    exp = irr(p0, t, expected_cf, b.m)
     return Credit(b.y, exp, (1 - surv[-1]) * 100, b.y - exp)
 
 
@@ -172,6 +194,8 @@ def as_kind(b: Bond, kind: str) -> Bond:
 
 def accrued(b: Bond) -> float:
     """Накопленный купон: доля текущего купона, которую продавец уже «заработал». Платит покупатель сверх цены."""
+    if b.acc is not None:
+        return b.acc
     if b.kind == "zero":
         return 0.0
     t_next = float(b.times()[0])
@@ -203,3 +227,16 @@ def implied_default(b: Bond, recovery: float) -> float:
         else:
             hi = mid
     return (lo + hi) / 2
+
+
+def ytm(b: Bond, clean: float) -> float:
+    """Доходность к погашению по чистой цене (для TIPS — реальная), %."""
+    t, cf = b.flows()
+    return irr(clean + accrued(b), t, cf, b.m)
+
+
+def from_moex(rb, rf: float, breakeven: float) -> Bond:
+    """Облигация Мосбиржи с настоящим графиком выплат; спред — пока 0, его подбирают по цене."""
+    sched = (rb.t, rb.coupons, rb.principal, rb.unknown, rb.outstanding)
+    return Bond(rb.kind, float(rb.t[-1]), rb.coupon_rate, rb.freq, rf, 0.0, breakeven, comp=1, sched=sched,
+                acc=rb.accrued)

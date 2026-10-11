@@ -178,6 +178,27 @@ for kind in ["zero", "tips", "floating"]:
 at.checkbox(key="bl_call").check().run()
 at.button(key="bl_mpd").click().run()
 assert not at.exception, at.exception
+# Россия: облигации Мосбиржи по тикеру — сверка доходности с биржей, оферта, амортизация, ошибка тикера
+at.segmented_control(key="bl_market").set_value("Россия").run()
+assert not at.exception, at.exception
+for ticker in ["SU26238RMFS4", "RU000A0GN9A7", "SU52002RMFS1", "SU29008RMFS8", "RU000A0JS4Z7"]:
+    at.text_input(key="bl_ticker").set_value(ticker).run()
+    at.button(key="bl_load").click().run()
+    assert not at.exception, (ticker, at.exception)
+    assert not at.error, (ticker, [e.value for e in at.error])
+    ours = float(at.metric[1].value.rstrip("%"))
+    if at.metric[1].delta and at.metric[1].delta.startswith("биржа"):
+        theirs = float(at.metric[1].delta.split()[1].rstrip("%"))
+        assert abs(ours - theirs) < 0.2, (ticker, ours, theirs)
+    print(f"  {ticker}: {ours:.2f}% ({at.metric[1].delta})")
+at.segmented_control(key="bl_known").set_value("Спред → считаем цену").run()
+assert not at.exception, at.exception
+at.button(key="bl_unlink").click().run()
+at.text_input(key="bl_ticker").set_value("НЕТТАКОГО").run()
+at.button(key="bl_load").click().run()
+assert not at.exception and at.error, "ошибка тикера должна показываться, а не ронять страницу"
+at.segmented_control(key="bl_market").set_value("США").run()
+assert not at.exception, at.exception
 print("лаборатория облигаций ок")
 at.switch_page("views/v2/help.py").run()
 assert not at.exception, at.exception

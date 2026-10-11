@@ -8,26 +8,38 @@ import pandas as pd
 import streamlit as st
 
 from core import bond_lab as B
-from core import curve, learn, ui
+from core import curve, learn, moex, ui
 from core.bond_charts import cashflows, lines, price_yield, waterfall
 from core.charts import hbar_chart
 
 BY_SPREAD, BY_PRICE = "Спред → считаем цену", "Цена → считаем доходность"
 BY_YEARS, BY_DATE = "Годами", "Датой погашения"
+US, RU = "США", "Россия"
 # Ориентиры по рейтингам: типичный спред и средняя доля дефолтов в год за долгую историю (Moody's, S&P), примерно
 RATINGS = {"AAA": (0.6, 0.02), "AA": (0.8, 0.05), "A": (1.1, 0.1), "BBB": (1.6, 0.25), "BB": (3.0, 1.0),
            "B": (4.5, 3.5), "CCC": (10.0, 12.0)}
 
 
 @st.cache_data(ttl=3600)
-def market() -> dict:
+def market(name: str) -> dict:
+    if name == RU:
+        c, d = moex.kbd()
+        return {"curve": c, "date": pd.Timestamp(d), "be": 4.0, "ig": None, "hy": None,
+                "gov": "ОФЗ (кривая КБД Мосбиржи)", "be_help": "По умолчанию — цель Банка России 4%; ожидания "
+                "населения и аналитиков обычно выше."}
     last = min(ui.load(k).index[-1] for k in curve.MATURITIES)
-    c = curve.curve_at(ui.load, last)
-    return {"curve": c, "date": last, "be": float(ui.load("T10YIE").dropna().iloc[-1]),
-            "ig": float(ui.load("BAMLC0A0CM").dropna().iloc[-1]), "hy": float(ui.load("BAMLH0A0HYM2").dropna().iloc[-1])}
+    return {"curve": curve.curve_at(ui.load, last), "date": last, "be": float(ui.load("T10YIE").dropna().iloc[-1]),
+            "ig": float(ui.load("BAMLC0A0CM").dropna().iloc[-1]), "hy": float(ui.load("BAMLH0A0HYM2").dropna().iloc[-1]),
+            "gov": "казначейских облигаций США", "be_help": "По умолчанию — 10-летний breakeven США."}
 
 
-m = market()
+@st.cache_data(ttl=300, show_spinner="Загружаю облигацию с Мосбиржи…")
+def moex_bond(query: str) -> moex.RuBond:
+    return moex.fetch(query)
+
+
+MARKET = st.session_state.get("bl_market") or US
+m = market(MARKET)
 
 
 def rf_at(years: float) -> float:
@@ -35,12 +47,36 @@ def rf_at(years: float) -> float:
     return float(np.interp(years, c.index.to_numpy(dtype=float), c.to_numpy(dtype=float)))
 
 
+def switch_market() -> None:
+    new = market(st.session_state.get("bl_market") or US)
+    st.session_state.update(bl_be=round(new["be"], 2), bl_infl=round(new["be"], 1), bl_curve=True)
+    st.session_state.pop("_bl_moex", None)
+
+
+def load_moex() -> None:
+    try:
+        rb = moex_bond(st.session_state.get("bl_ticker", ""))
+    except Exception as e:  # тикер не найден, нет цены, биржа недоступна
+        st.session_state["_bl_moex_err"] = str(e)
+        return
+    st.session_state.pop("_bl_moex_err", None)
+    st.session_state["_bl_moex"] = rb
+    st.session_state.update(bl_kind=rb.kind, bl_coupon=min(rb.coupon_rate, 30.0), bl_freq=rb.freq, bl_term=BY_DATE,
+                            bl_mat=rb.maturity, bl_known=BY_PRICE, bl_price=rb.price, bl_curve=True,
+                            bl_offer=bool(rb.offers))
+
+
+def unlink_moex() -> None:
+    st.session_state.pop("_bl_moex", None)
+
+
 PRESETS = {
-    "10-летняя казначейская сейчас": dict(kind="fixed", years=10.0, coupon=round(rf_at(10) * 8) / 8, freq=2,
+    "10-летняя гособлигация сейчас": dict(kind="fixed", years=10.0, coupon=round(rf_at(10) * 8) / 8, freq=2,
                                           spread=0.0),
     "Бескупонная на 30 лет": dict(kind="zero", years=30.0, coupon=0.0, freq=2, spread=0.0),
     "Купон 0,6% из 2020 года": dict(kind="fixed", years=4.0, coupon=0.625, freq=2, spread=0.0),
-    "Мусорная облигация": dict(kind="fixed", years=7.0, coupon=8.0, freq=2, spread=round(m["hy"] + 1, 1),
+    "Мусорная облигация": dict(kind="fixed", years=7.0, coupon=8.0, freq=2,
+                               spread=round(m["hy"] + 1, 1) if m["hy"] else 5.0,
                                pd=4.0, rec=40),
     "Плавающая ставка": dict(kind="floating", years=5.0, coupon=0.5, freq=4, spread=0.5),
     "TIPS на 10 лет": dict(kind="tips", years=10.0, coupon=1.5, freq=2, spread=0.0),
@@ -50,7 +86,7 @@ PRESETS = {
 # рассчитанным значением — цифры при переключении не скачут.
 DEFAULTS = dict(kind="fixed", coupon=round(rf_at(10) * 8) / 8, freq=2, pd=0.5, rec=40, curve=True,
                 be=round(m["be"], 2), shock=1.0, hold=5.0, tshock=0.0, delta=1.0, infl=round(m["be"], 1),
-                known=BY_SPREAD, term=BY_YEARS, call=False)
+                known=BY_SPREAD, term=BY_YEARS, call=False, market=US)
 
 
 def apply(values: dict) -> None:
@@ -59,7 +95,7 @@ def apply(values: dict) -> None:
     for k, v in values.items():
         st.session_state[f"bl_{k}"] = v
     st.session_state.update(bl_curve=True, bl_known=BY_SPREAD, bl_term=BY_YEARS)
-    for k in ("bl_years", "bl_spread", "bl_price", "bl_mat"):
+    for k in ("bl_years", "bl_spread", "bl_price", "bl_mat", "_bl_moex"):
         st.session_state.pop(k, None)
 
 
@@ -90,60 +126,101 @@ st.markdown("Облигация — простой инструмент: вам 
 
 # ---------- настройки ----------
 with st.container(border=True):
-    st.caption("Готовые примеры — или задайте условия своей облигации из брокера и выберите «Цена → считаем "
-               "доходность»")
-    cols = st.columns(len(PRESETS))
-    for col, (name, values) in zip(cols, PRESETS.items()):
-        col.button(name, on_click=apply, args=(values,), key=f"bl_p_{name}", width="stretch")
+    top, info = st.columns([1, 3], vertical_alignment="bottom")
+    top.segmented_control("Рынок", [US, RU], key="bl_market", on_change=switch_market,
+                          help="Задаёт кривую гособлигаций, от которой считается спред, и способ начисления "
+                               "доходности (в России — эффективная годовая, как на Мосбирже).")
+    loaded: moex.RuBond | None = st.session_state.get("_bl_moex") if MARKET == RU else None
+    if MARKET == RU:
+        with info:
+            q, go_ = st.columns([3, 1], vertical_alignment="bottom")
+            q.text_input("Тикер или ISIN облигации на Мосбирже", key="bl_ticker",
+                         placeholder="например, SU26238RMFS4 или RU000A1038V6")
+            go_.button("Загрузить с биржи", on_click=load_moex, key="bl_load", width="stretch")
+        if st.session_state.get("_bl_moex_err"):
+            st.error(st.session_state["_bl_moex_err"])
+    if loaded:
+        with st.container(border=True):
+            l1, l2 = st.columns([4, 1], vertical_alignment="center")
+            l1.markdown(f"**{loaded.name}** · {loaded.isin} · номинал {loaded.face:,.2f} {loaded.currency} · "
+                        f"цена {loaded.price:.3f}% ({loaded.price_note}) · данные с задержкой ~15 мин.  \n"
+                        f"Условия выпуска и график выплат взяты с биржи — их поля ниже заблокированы. Цену можно "
+                        f"менять: «а если купить по …».")
+            l2.button("Отвязать от биржи", on_click=unlink_moex, key="bl_unlink", width="stretch")
+            for n in loaded.notes:
+                st.caption("ℹ️ " + n)
+            if loaded.offers:
+                od, ot = loaded.offers[0]
+                st.checkbox(f"Считать до оферты {od:%d.%m.%Y} ({ot.lower()})", key="bl_offer",
+                            help="Эмитент выкупит или погасит выпуск в дату оферты. Биржа и брокеры показывают "
+                                 "доходность к оферте — после неё купон часто пересматривают.")
+    else:
+        st.caption("Готовые примеры" + (" — или загрузите облигацию с Мосбиржи по тикеру" if MARKET == RU else
+                                        " — или задайте условия своей облигации и выберите «Цена → считаем "
+                                        "доходность»"))
+    if not loaded:
+        cols = st.columns(len(PRESETS))
+        for col, (name, values) in zip(cols, PRESETS.items()):
+            col.button(name, on_click=apply, args=(values,), key=f"bl_p_{name}", width="stretch")
+    lock = loaded is not None
     a, b, c, d = st.columns(4)
-    kind = a.selectbox("Тип", list(B.KINDS), format_func=B.KINDS.get, key="bl_kind",
+    kind = a.selectbox("Тип", list(B.KINDS), format_func=B.KINDS.get, key="bl_kind", disabled=lock,
                        help="Бескупонная платит только номинал в конце. Плавающая — купон = ставка + надбавка, "
                             "пересматривается каждый период. TIPS — номинал растёт вместе с инфляцией.")
     with b:
-        term = st.segmented_control("Срок задаю", [BY_YEARS, BY_DATE], key="bl_term") or BY_YEARS
+        term = st.segmented_control("Срок задаю", [BY_YEARS, BY_DATE], key="bl_term", disabled=lock) or BY_YEARS
         if term == BY_YEARS:
             if "bl_years" not in st.session_state:
                 st.session_state["bl_years"] = float(min(max(round(st.session_state["_bl_years"] * 2) / 2, 0.5), 30))
             years = st.slider("Срок до погашения, лет", 0.5, 30.0, step=0.5, key="bl_years",
-                              label_visibility="collapsed")
+                              label_visibility="collapsed", disabled=lock)
         else:
             if "bl_mat" not in st.session_state:
                 st.session_state["bl_mat"] = date.today() + pd.Timedelta(days=round(st.session_state["_bl_years"]
                                                                                     * 365.25))
             mat = st.date_input("Дата погашения", min_value=date.today() + pd.Timedelta(days=1),
                                 max_value=date(date.today().year + 40, 12, 31), key="bl_mat",
-                                label_visibility="collapsed")
+                                label_visibility="collapsed", disabled=lock)
             years = (mat - date.today()).days / 365.25
+    use = loaded.until(loaded.offers[0][0]) if loaded and loaded.offers and st.session_state.get("bl_offer") \
+        else loaded
+    if use:
+        years = float(use.t[-1])
     st.session_state["_bl_years"] = years
     coupon_label = {"floating": "Надбавка к плавающей ставке, п.п.", "tips": "Реальный купон, % в год"}.get(
         kind, "Купон, % в год")
-    coupon = c.slider(coupon_label, 0.0, 15.0, step=0.125, key="bl_coupon", disabled=kind == "zero",
+    coupon = c.slider(coupon_label, 0.0, 30.0, step=0.125, key="bl_coupon", disabled=kind == "zero" or lock,
                             help="Сколько процентов от номинала платят в год.")
-    freq = d.segmented_control("Выплат в год", [1, 2, 4, 12], key="bl_freq",
+    freq = d.segmented_control("Выплат в год", [1, 2, 4, 12], key="bl_freq", disabled=lock,
                                help="Казначейские и большинство корпоративных облигаций США — 2 раза в год.") or 2
     e, f, g = st.columns([2, 1, 1])
     with e:
         use_curve = st.toggle("Ставка гособлигаций — с текущей кривой", key="bl_curve",
-                              help=f"Ставка казначейских облигаций того же срока на {m['date']:%d.%m.%Y}.")
+                              help=f"Ставка {m['gov']} того же срока на {m['date']:%d.%m.%Y}.")
         if use_curve:
             st.session_state["bl_rf"] = round(rf_at(years), 2)
-        rf = st.slider("Ставка гособлигаций того же срока, %", 0.0, 12.0, step=0.05, key="bl_rf",
+        rf = st.slider("Ставка гособлигаций того же срока, %", 0.0, 30.0, step=0.05, key="bl_rf",
                        disabled=use_curve, help="Безрисковая доходность: от неё отсчитывается всё остальное.")
     be = g.slider("Ожидаемая инфляция, %", 0.0, 8.0, step=0.05, key="bl_be",
-                  help="Breakeven: какую инфляцию закладывает рынок. Нужна для TIPS и вкладки «Инфляция». "
-                       "По умолчанию — 10-летний breakeven.")
-    base = B.Bond(kind, years, 0.0 if kind == "zero" else coupon, int(freq), rf, 0.0, be)
+                  help="Какую инфляцию закладывает рынок. Нужна для облигаций с индексируемым номиналом (TIPS, "
+                       "ОФЗ-ИН) и вкладки «Инфляция». " + m["be_help"])
+    if use:
+        base = B.from_moex(use, rf, be)
+    else:
+        base = B.Bond(kind, years, 0.0 if kind == "zero" else coupon, int(freq), rf, 0.0, be,
+                      comp=1 if MARKET == RU else 0)
     with f:
         known = st.segmented_control("Что известно", [BY_SPREAD, BY_PRICE], key="bl_known") or BY_SPREAD
-        if known == BY_PRICE and kind == "floating":
+        if known == BY_PRICE and kind == "floating" and not use:
             st.caption("Для плавающего купона считаем от спреда.")
             known = BY_SPREAD
         if known == BY_SPREAD:
             if "bl_spread" not in st.session_state:
-                st.session_state["bl_spread"] = float(min(max(round(st.session_state["_bl_spread"], 1), -2.0), 12.0))
-            spread = st.slider("Кредитный спред, п.п.", -2.0, 12.0, step=0.1, key="bl_spread",
-                               help=f"Надбавка за риск неплатежа. Сейчас на рынке: надёжные компании ≈ "
-                                    f"{m['ig']:.1f}, мусорные ≈ {m['hy']:.1f} п.п.")
+                st.session_state["bl_spread"] = float(min(max(round(st.session_state["_bl_spread"], 1), -5.0), 25.0))
+            spread = st.slider("Кредитный спред, п.п.", -5.0, 25.0, step=0.1, key="bl_spread",
+                               help="Надбавка за риск неплатежа к гособлигациям того же срока." +
+                                    (f" Сейчас в США: надёжные компании ≈ {m['ig']:.1f}, мусорные ≈ "
+                                     f"{m['hy']:.1f} п.п." if m["ig"] else ""))
         else:
             if "bl_price" not in st.session_state:
                 now = replace(base, spread=st.session_state["_bl_spread"])
@@ -169,9 +246,17 @@ c[0].metric("Цена", f"{s.price - acc:.2f}", f"к оплате {s.price:.2f} 
             else f"{s.price - 100:+.2f} к номиналу", delta_color="off", border=True,
             help="«Чистая» цена за 100 номинала. Покупатель платит сверху накопленный купон — долю текущего купона, "
                  "которую продавец уже «заработал».")
-c[1].metric("Доходность к погашению", f"{y:.2f}%", "реальная" if kind == "tips" else
-            f"текущая доходность {s.current_yield:.2f}%", delta_color="off", border=True,
-            help="Средняя доходность в год, если держать до конца и реинвестировать купоны под ту же ставку. "
+to_offer = use is not None and use is not loaded
+check = ""
+theirs = (loaded.moex_yield_offer if to_offer else None if loaded.offers else loaded.moex_yield) if loaded else None
+if theirs and known == BY_PRICE and abs(st.session_state["bl_price"] - loaded.price) < 1e-9:
+    check = f"биржа: {theirs:.2f}%"
+c[1].metric("Доходность к оферте" if to_offer else "Доходность к погашению", f"{y:.2f}%",
+            check or ("реальная" if kind == "tips" else f"текущая доходность {s.current_yield:.2f}%"),
+            delta_color="off", border=True,
+            help="Средняя доходность в год, если держать до конца (до оферты) и реинвестировать купоны под ту же "
+                 "ставку. " + ("Эффективная годовая — как на Мосбирже. " if MARKET == RU else "") +
+                 ("Для ОФЗ-ИН и TIPS — реальная, сверх инфляции. " if kind == "tips" else "") +
                  "Текущая доходность — купон / цена.")
 c[2].metric("Спред к гособлигациям", f"{spread:+.2f} п.п.", f"≈ {implied_pd:.1f}% дефолтов в год",
             delta_color="off", border=True,
@@ -208,7 +293,7 @@ tabs = st.tabs(["Из чего цена", "Если ставки изменят�
 # ---------- 1. из чего цена ----------
 with tabs[0]:
     t, cf = bond.flows()
-    pv = cf * B.discount(y, t, bond.freq)
+    pv = cf * B.discount(y, t, bond.m)
     st.plotly_chart(cashflows(t, cf, pv, s.center), width="stretch")
     st.markdown(f"Контур — сколько заплатят, заливка — сколько эта выплата стоит **сегодня** при доходности "
                 f"{y:.2f}%. Цена облигации — сумма заливки: **{s.price:.2f}**. Далёкие деньги стоят меньше: последняя "
@@ -243,7 +328,7 @@ with tabs[1]:
         st.markdown(f"**Тот же сдвиг {shock:+.2f} п.п. для облигаций разных сроков**")
         terms = [2, 5, 10, 30]
         changes = [(B.price(b_, shock) / B.price(b_) - 1) * 100 for b_ in
-                   [replace(bond, years=float(T), rf=rf_at(T), coupon=rf_at(T) if bond.kind != "floating"
+                   [replace(bond, sched=None, acc=None, years=float(T), rf=rf_at(T), coupon=rf_at(T) if bond.kind != "floating"
                             else bond.coupon) for T in terms]]
         st.plotly_chart(hbar_chart([f"{T} {'года' if T == 2 else 'лет'}" for T in terms], changes, height=240),
                         width="stretch")
@@ -315,8 +400,10 @@ with tabs[3]:
            f"деньги нужнее всего.")
     if premium < 0:
         msg += " **Сейчас спред не покрывает даже ожидаемых потерь** — при таких допущениях облигация невыгодна."
-    st.markdown(msg + f" Для ориентира: средний спред надёжных компаний США сейчас ≈ {m['ig']:.1f} п.п., "
-                      f"мусорных ≈ {m['hy']:.1f} п.п. (слой 4).")
+    if m["ig"]:
+        msg += (f" Для ориентира: средний спред надёжных компаний США сейчас ≈ {m['ig']:.1f} п.п., мусорных ≈ "
+                f"{m['hy']:.1f} п.п. (слой 4).")
+    st.markdown(msg)
 
 # ---------- 5. инфляция ----------
 with tabs[4]:
