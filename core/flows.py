@@ -213,3 +213,71 @@ def calendar(start: date, end: date, timeout: float = 5.0) -> list[dict]:
     r = requests.get(CALENDAR_URL, params={"from": start.isoformat(), "to": end.isoformat()}, timeout=timeout)
     r.raise_for_status()
     return r.json()
+
+
+# ---------- модельные потоки: что фонды обязаны делать по своим правилам ----------
+
+def vol_control(prices: pd.Series, target: float = 10.0, cap: float = 1.5, window: int = 20) -> pd.DataFrame:
+    """Фонд с таргетом волатильности: доля акций = таргет / реализованная волатильность за window дней, не выше cap."""
+    r = np.log(prices.dropna()).diff()
+    vol = r.rolling(window).std() * np.sqrt(252) * 100
+    return pd.DataFrame({"vol": vol, "exposure": (target / vol).clip(upper=cap)}).dropna()
+
+
+def vol_control_shock(prices: pd.Series, move_pct: float, target: float = 10.0, cap: float = 1.5,
+                      window: int = 20) -> tuple[float, float]:
+    """Если завтра рынок сдвинется на move_pct %: (доля акций сейчас, доля после пересчёта)."""
+    p = prices.dropna()
+    now = vol_control(p, target, cap, window)["exposure"].iloc[-1]
+    nxt = pd.concat([p, pd.Series([p.iloc[-1] * (1 + move_pct / 100)], index=[p.index[-1] + pd.Timedelta(days=1)])])
+    return float(now), float(vol_control(nxt, target, cap, window)["exposure"].iloc[-1])
+
+
+TREND_HORIZONS = (20, 60, 120, 250)  # торговых дней: ~месяц, квартал, полгода, год
+
+
+def trend(prices: pd.Series, target: float = 10.0) -> pd.DataFrame:
+    """Трендовый фонд (упрощённо): сигнал = среднее знаков доходности за 4 горизонта (−1…+1),
+    позиция = сигнал × таргет волатильности / волатильность за 60 дней (не больше 2)."""
+    lp = np.log(prices.dropna())
+    sig = sum(np.sign(lp - lp.shift(h)) for h in TREND_HORIZONS) / len(TREND_HORIZONS)
+    vol = lp.diff().rolling(60).std() * np.sqrt(252) * 100
+    return pd.DataFrame({"signal": sig, "position": sig * (target / vol).clip(upper=2)}).dropna()
+
+
+def trend_flips(prices: pd.Series) -> dict[int, float]:
+    """Уровни, при пересечении которых меняется знак сигнала по каждому горизонту: цена h дней назад."""
+    p = prices.dropna()
+    return {h: float(p.iloc[-h - 1]) for h in TREND_HORIZONS if len(p) > h}
+
+
+def trend_returns(prices: pd.Series) -> pd.DataFrame:
+    """Дневная лог-доходность трендовой стратегии (позиция вчера × доходность сегодня) и просто актива."""
+    p = prices.dropna()
+    r = np.log(p).diff()
+    pos = trend(p)["position"]
+    return pd.DataFrame({"trend": pos.shift(1) * r, "hold": r}).dropna()
+
+
+def period_to_date(prices: pd.Series, freq: str = "M", skip_last: int = 0) -> float:
+    """Доходность с начала текущего месяца (M) или квартала (Q), %; skip_last — не считать последние дни."""
+    p = prices.dropna()
+    start = p.index[-1].to_period(freq).start_time
+    base = p[:start - pd.Timedelta(days=1)]
+    seg = p[start:]
+    end = seg.iloc[-1 - skip_last] if len(seg) > skip_last else seg.iloc[-1]
+    return float((end / base.iloc[-1] - 1) * 100) if len(base) else float("nan")
+
+
+def month_end_split(stocks: pd.Series, target: pd.Series) -> dict[str, list[pd.Timestamp]]:
+    """Концы месяцев, разделённые по доходности акций с начала месяца (до дня −2): верхняя и нижняя трети."""
+    rows = []
+    for d in event_dates("month_end", target.dropna().index):
+        m0 = d.to_period("M").start_time
+        seg, base = stocks[m0:d].dropna(), stocks[:m0 - pd.Timedelta(days=1)].dropna()
+        if len(seg) >= 5 and len(base):
+            rows.append((d, (seg.iloc[-3] / base.iloc[-1] - 1) * 100))
+    g = pd.DataFrame(rows, columns=["d", "mtd"])
+    return {"up": g[g["mtd"] >= g["mtd"].quantile(2 / 3)]["d"].tolist(),
+            "down": g[g["mtd"] <= g["mtd"].quantile(1 / 3)]["d"].tolist(),
+            "thresholds": [float(g["mtd"].quantile(1 / 3)), float(g["mtd"].quantile(2 / 3))]}

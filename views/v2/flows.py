@@ -9,7 +9,7 @@ import streamlit as st
 
 from core import flows as F
 from core import learn, ui
-from core.charts import band_chart, grouped_bars
+from core.charts import band_chart, grouped_bars, line_chart
 from core.learn import Example
 from core.series import BY_KEY
 
@@ -18,6 +18,12 @@ ASSETS = {"S&P 500": "^GSPC", "Nasdaq": "^IXIC", "Гособлигации 20+ �
 PERIODS = {"С 1990 года": "1990", "С 2010 года": "2010", "Последние 5 лет": None}
 MARKETS = {"us_equity": "акции США", "us_rates": "ставки США", "fx": "валюты", "crypto": "крипта", "ru": "Россия"}
 WEEKDAYS = ["пн", "вт", "ср", "чт", "пт", "сб", "вс"]
+TREND_ASSETS = {"S&P 500": "^GSPC", "Nasdaq": "^IXIC", "Гособлигации 20+ лет (TLT)": "TLT", "Золото": "GC=F",
+                "Индекс доллара": "DTWEXBGS", "Иен за доллар": "DEXJPUS", "Биткоин": "BTC-USD"}
+
+
+def cut_years(s: pd.Series, years: int) -> pd.Series:
+    return s[s.index >= s.index[-1] - pd.DateOffset(years=years)]
 
 
 @st.cache_data(ttl=3600, show_spinner=False)
@@ -272,6 +278,170 @@ learn.examples([Example("Эффект смены месяца", ex_turn),
                 Example("Ребалансировка конца квартала: исследование видит, простой тест — нет", ex_rebalance,
                         normal=False),
                 Example("Ловушка множественных проверок", ex_many, normal=False)], key="study")
+
+# ---------- 4. модельные потоки ----------
+st.header("4. Что фонды обязаны делать по своим правилам")
+st.markdown("Часть вынужденных потоков нигде не публикуется, но **правила известны** — значит, поток можно "
+            "смоделировать. Это упрощённые модели: настоящие фонды сложнее, а их размеры известны только по оценкам "
+            "банков. Модель показывает **направление и пороги**, а не точный объём.")
+learn.tags("совпадающий", "проверен на истории")
+spx = ui.load("^GSPC").dropna()
+tab_vol, tab_trend, tab_fx, tab_q = st.tabs(["Таргет волатильности", "Трендовые фонды (CTA)",
+                                             "Конец месяца: хедж валюты", "Конец квартала: пенсионные фонды"])
+
+with tab_vol:
+    vc = F.vol_control(spx)
+    k = st.columns(3)
+    k[0].metric("Волатильность S&P за 20 дней", f"{vc['vol'].iloc[-1]:.1f}%", "в годовом выражении",
+                delta_color="off", border=True)
+    k[1].metric("Доля акций у модельного фонда", f"{vc['exposure'].iloc[-1]:.0%}",
+                f"{vc['exposure'].iloc[-1] - vc['exposure'].iloc[-6]:+.0%} за неделю", delta_color="off", border=True,
+                help="Таргет 10% годовой волатильности, плечо до 150%.")
+    move = k[2].slider("Если завтра S&P сдвинется на, %", -8.0, 8.0, -3.0, 0.5, key="fl_move")
+    now_e, new_e = F.vol_control_shock(spx, move)
+    aum = st.slider("Сколько денег в таких стратегиях, млрд $ (допущение)", 50, 1000, 300, 50, key="fl_aum",
+                    help="Публичных данных нет; банки оценивают по-разному, порядка сотен миллиардов. Подставьте "
+                         "свою оценку — модель пересчитает объём в долларах.")
+    st.markdown(f"После дня {move:+.1f}% модель пересчитает волатильность, и доля акций станет **{new_e:.0%}** вместо "
+                f"{now_e:.0%}: это **{'продажа' if new_e < now_e else 'покупка'} {abs(new_e - now_e) * aum:,.0f} млрд $** "
+                f"при капитале {aum} млрд $. Важно: сильный день в **любую** сторону поднимает волатильность — модель "
+                f"продаёт и после резкого роста.")
+    st.plotly_chart(line_chart({"Доля акций у модельного фонда": cut_years(vc["exposure"] * 100, 5),
+                                "Волатильность S&P за 20 дней": cut_years(vc["vol"], 5)}, units="%",
+                               recessions=ui.recessions(), height=280), width="stretch")
+
+with tab_trend:
+    rows = []
+    for name, key in TREND_ASSETS.items():
+        p = ui.load(key).dropna()
+        t = F.trend(p).iloc[-1]
+        flips = F.trend_flips(p)
+        last = float(p.iloc[-1])
+        nearest = min(flips.items(), key=lambda kv: abs(kv[1] / last - 1))
+        sig = float(t["signal"])
+        rows.append({"Актив": name, "Сигнал (−1…+1)": round(sig, 2),
+                     "Трендовые фонды": "в покупке" if sig > 0.25 else "в продаже" if sig < -0.25 else "нейтрально",
+                     "Ближайший уровень разворота": f"{nearest[1]:,.2f}",
+                     "Горизонт": f"{nearest[0]} дн.", "До уровня": f"{(nearest[1] / last - 1) * 100:+.1f}%"})
+    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    st.markdown("Сигнал — среднее направлений тренда за месяц, квартал, полгода и год. **Уровень разворота** — цена, "
+                "ниже (или выше) которой сменится знак одного из горизонтов, и трендовые фонды начнут "
+                "сокращать позицию. Пробой нескольких уровней подряд — момент, когда их продажи складываются.")
+
+with tab_fx:
+    usd = ui.load("DTWEXBGS").dropna()
+    split = F.month_end_split(spx, usd)
+    res = {n: F.study(usd, split[k_], 3) for n, k_ in (("S&P за месяц сильно вырос", "up"),
+                                                        ("S&P за месяц упал", "down"))}
+    df = pd.DataFrame({n: {"день −1": r.daily.loc[-1, "Средняя, %"], "последний день месяца": r.daily.loc[0, "Средняя, %"],
+                           "первые 2 дня нового": F.window_effect(r, 1, 2)[0]} for n, r in res.items()}).T
+    mtd = F.period_to_date(spx, "M")
+    st.metric("S&P с начала месяца", f"{mtd:+.1f}%",
+              "в верхней трети — ждём продажу доллара" if mtd >= split["thresholds"][1] else
+              "в нижней трети" if mtd <= split["thresholds"][0] else "в середине — сигнала нет",
+              delta_color="off", border=True)
+    st.plotly_chart(grouped_bars(df, units="%", height=280), width="stretch")
+    eff, t_ = F.window_effect(res["S&P за месяц сильно вырос"], -1, 0)
+    st.markdown(f"Иностранцы, которые держат акции США и хеджируют доллар, после роста акций должны **продать "
+                f"больше долларов** — хедж пересматривают в конце месяца. На истории: в месяцы сильного роста S&P "
+                f"широкий индекс доллара в последние два дня месяца в среднем **{eff:+.2f}%** (t = {t_:.1f}) сверх "
+                f"обычного. Это совпадает с исследованием Melvin и Prins (2015) о лондонском фиксинге.")
+
+with tab_q:
+    bonds = ui.load("DGS10").dropna()
+    bond_q = float((bonds.shift(1) / 252 - 7.5 * bonds.diff())[spx.index[-1].to_period("Q").start_time:].sum())
+    gap = F.period_to_date(spx, "Q") - bond_q
+    st.metric("Акции минус облигации с начала квартала", f"{gap:+.1f} п.п.",
+              "пенсионным фондам продавать акции" if gap > 0 else "пенсионным фондам докупать акции",
+              delta_color="off", border=True)
+    st.markdown("По правилам фонды должны продать часть того, что обогнало. Но простой тест на истории этого "
+                "эффекта **не видит** (раздел 3, пример «Ребалансировка конца квартала»): фонды ребалансируют "
+                "заранее и фьючерсами, а другие участники встают перед потоком. Показываем как ориентир направления, "
+                "не как сигнал.")
+
+with learn.how_it_works("Как работают эти правила"):
+    st.markdown("""
+- **Таргет волатильности.** Фонд держит риск постоянным: волатильность выросла вдвое — акций вдвое меньше. Продаёт
+  в распродажу и докупает в спокойный рост, усиливая оба. Важно: он реагирует на **уже случившиеся** колебания.
+- **Трендовые фонды (CTA).** Покупают то, что росло, и продают то, что падало, на нескольких горизонтах сразу.
+  Уровни разворота известны всем — поэтому у них часто «сгущаются» стопы.
+- **Хедж валюты.** Иностранец держит акции США на $100 и продал $100 вперёд. Акции выросли до $110 — нужно
+  продать ещё $10. Хеджи пересматривают раз в месяц — отсюда давление на доллар в последние дни месяца.
+- **Пенсионные фонды** держат доли (например, 60/40) и в конце квартала возвращают их.
+""")
+
+
+def ex_aug2024():
+    vc_ = F.vol_control(spx)
+    parts = {name: vc_.loc[a:b, "exposure"] * 100 for name, (a, b) in
+             {"Февраль 2018": ("2018-01-15", "2018-03-15"), "Март 2020": ("2020-02-01", "2020-04-15"),
+              "Август 2024": ("2024-07-10", "2024-09-10")}.items()}
+    rows = {n: {"до": float(x.iloc[0]), "минимум": float(x.min())} for n, x in parts.items()}
+    st.plotly_chart(grouped_bars(pd.DataFrame(rows).T, units="%", height=280), width="stretch")
+    st.markdown(
+        "Доля акций у модельного фонда перед тремя распродажами и в их худшей точке. В августе 2024 года волатильность "
+        f"S&P за 20 дней выросла примерно вдвое — и модель сократила акции с {rows['Август 2024']['до']:.0f}% до "
+        f"{rows['Август 2024']['минимум']:.0f}% капитала. Банк международных расчётов прямо называет фонды с "
+        f"таргетом волатильности одним из усилителей того обвала (BIS Bulletin 90). В марте 2020 года модель ушла "
+        f"почти в ноль.")
+
+
+def ex_trend_good():
+    tr = F.trend_returns(spx)
+    rows = {}
+    for name, (a, b) in {"2007–2009": ("2007-10", "2009-03"), "2022": ("2022-01", "2022-10")}.items():
+        x = tr[a:b]
+        rows[name] = {"Тренд": (np.exp(x["trend"].sum()) - 1) * 100, "Просто держать S&P": (np.exp(x["hold"].sum()) - 1) * 100}
+    st.plotly_chart(grouped_bars(pd.DataFrame(rows).T, units="%", height=280), width="stretch")
+    full = tr["1990":]
+    dd = lambda x: float((np.exp(x.cumsum()) / np.exp(x.cumsum()).cummax()).min() * 100 - 100)
+    st.markdown(
+        f"В долгих распродажах тренд успевает развернуться и зарабатывает на падении. На всём периоде с 1990 года "
+        f"модель на S&P даёт меньшую доходность, чем просто держать индекс "
+        f"({full['trend'].mean() * 252 * 100:.1f}% против {full['hold'].mean() * 252 * 100:.1f}% в год), но худшая "
+        f"просадка — {dd(full['trend']):.0f}% против {dd(full['hold']):.0f}%. Это и есть роль тренда — страховка в "
+        f"затяжной кризис (Moskowitz, Ooi и Pedersen, 2012).")
+
+
+def ex_trend_bad():
+    tr = F.trend_returns(spx)
+    rows = {}
+    for name, (a, b) in {"Февраль–апрель 2018": ("2018-01-26", "2018-04-30"),
+                         "Март–апрель 2020": ("2020-02-19", "2020-04-30")}.items():
+        x = tr[a:b]
+        rows[name] = {"Тренд": (np.exp(x["trend"].sum()) - 1) * 100, "Просто держать S&P": (np.exp(x["hold"].sum()) - 1) * 100}
+    st.plotly_chart(grouped_bars(pd.DataFrame(rows).T, units="%", height=280), width="stretch")
+    st.markdown("Резкий обвал и такой же быстрый отскок — худший сценарий для тренда: он продаёт уже внизу и "
+                "откупает уже наверху. В 2018 году модель потеряла больше, чем рынок.")
+
+
+def ex_vol_after():
+    vc_ = F.vol_control(spx)["exposure"]
+    ch = vc_.diff(5)["1990":]
+    ev_ = ch[ch <= ch.quantile(0.05)]
+    keep, last = [], None
+    for d in ev_.index:
+        if last is None or (d - last).days >= 10:
+            keep.append(d)
+            last = d
+    s_ = F.study(spx["1990":], keep, 10)
+    k_ = pd.Index(s_.days)
+    st.plotly_chart(band_chart({"S&P вокруг сильных продаж модели": pd.Series(s_.path, index=k_)},
+                               (pd.Series(s_.lo, index=k_), pd.Series(s_.hi, index=k_), "95% интервал"), height=300),
+                    width="stretch")
+    after, t_a = F.window_effect(s_, 1, 5)
+    st.markdown(
+        f"{s_.n} эпизодов, когда модель за неделю сократила акции сильнее всего. Продажи идут **вместе** с падением "
+        f"(дни до нуля), но дальнейшего падения не предсказывают: за 5 дней после — {after:+.2f}% (t = {t_a:.1f}). "
+        f"Фонды с таргетом волатильности усиливают распродажу, пока она идёт, — но к моменту, когда модель «продала», "
+        f"основной удар уже случился.")
+
+
+learn.examples([Example("Таргет волатильности в распродажах 2018, 2020, 2024", ex_aug2024),
+                Example("Тренд в долгих распродажах: 2008 и 2022", ex_trend_good),
+                Example("Резкий разворот: тренд проигрывает", ex_trend_bad, normal=False),
+                Example("Продажи модели не предсказывают дальнейшего падения", ex_vol_after, normal=False)],
+               key="models")
 
 learn.next_steps([7, 4], "Вынужденные потоки ускоряют любое звено цепочки, но сильнее всего видны в ценах активов "
                          "(слой 7) и в финансовых условиях (слой 4): распродажа по марже сама ужесточает условия.")
