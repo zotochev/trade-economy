@@ -180,6 +180,40 @@ def _fetch_cbr(keys: list[str]) -> dict[str, pd.Series]:
     return out
 
 
+CFTC_URL = "https://publicreporting.cftc.gov/resource/gpe5-46if.json"  # Traders in Financial Futures, только фьючерсы
+COT_CONTRACTS = {"ES": "13874A", "NQ": "209742", "TY": "043602", "JY": "097741", "BTC": "133741"}
+COT_GROUPS = {"LEV": "lev_money_positions", "AM": "asset_mgr_positions"}
+FINRA_MARGIN_URL = "https://www.finra.org/sites/default/files/2021-03/margin-statistics.xlsx"
+
+
+def _fetch_cftc(keys: list[str]) -> dict[str, pd.Series]:
+    """Чистая позиция групп участников (лонг − шорт) в % открытого интереса, по датам отчёта (вторник)."""
+    codes = ",".join(f"'{c}'" for c in COT_CONTRACTS.values())
+    r = requests.get(CFTC_URL, timeout=120, params={
+        "$limit": 50000, "$where": f"cftc_contract_market_code in ({codes})",
+        "$select": "report_date_as_yyyy_mm_dd,cftc_contract_market_code,open_interest_all,"
+                   + ",".join(f"{g}_long,{g}_short" for g in COT_GROUPS.values())})
+    r.raise_for_status()
+    df = pd.DataFrame(r.json())
+    df["date"] = pd.to_datetime(df["report_date_as_yyyy_mm_dd"])
+    out = {}
+    for name, code in COT_CONTRACTS.items():
+        x = df[df["cftc_contract_market_code"] == code].sort_values("date").set_index("date")
+        oi = pd.to_numeric(x["open_interest_all"])
+        for g, col in COT_GROUPS.items():
+            net = pd.to_numeric(x[f"{col}_long"]) - pd.to_numeric(x[f"{col}_short"])
+            out[f"COT_{name}_{g}"] = (net / oi * 100).groupby(level=0).last()
+    return out
+
+
+def _fetch_finra(keys: list[str]) -> dict[str, pd.Series]:
+    """Маржинальный долг клиентов брокеров FINRA, млн $, по месяцам."""
+    raw = requests.get(FINRA_MARGIN_URL, timeout=60, headers={"User-Agent": "Mozilla/5.0"}).content
+    df = pd.read_excel(io.BytesIO(raw), sheet_name=0)
+    idx = pd.to_datetime(df["Year-Month"].astype(str), format="%Y-%m")
+    return {"FINRA_MARGIN": pd.Series(pd.to_numeric(df.iloc[:, 1]).values, index=idx).sort_index()}
+
+
 def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateResult]:
     """Докачать устаревшие ряды (или все переданные, если force)."""
     if keys is None:
@@ -201,7 +235,8 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
 
     # yfinance, Шиллер и файлы ФРС отдают несколько рядов одним запросом
     for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed),
-                       ("nyfed", _fetch_nyfed), ("cbr", _fetch_cbr)):
+                       ("nyfed", _fetch_nyfed), ("cbr", _fetch_cbr), ("cftc", _fetch_cftc),
+                       ("finra", _fetch_finra)):
         ks = by_src.get(src, [])
         if not ks:
             continue

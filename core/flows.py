@@ -281,3 +281,37 @@ def month_end_split(stocks: pd.Series, target: pd.Series) -> dict[str, list[pd.T
     return {"up": g[g["mtd"] >= g["mtd"].quantile(2 / 3)]["d"].tolist(),
             "down": g[g["mtd"] <= g["mtd"].quantile(1 / 3)]["d"].tolist(),
             "thresholds": [float(g["mtd"].quantile(1 / 3)), float(g["mtd"].quantile(2 / 3))]}
+
+
+# ---------- позиционирование ----------
+COT = {"ES": ("E-mini S&P 500", "^GSPC"), "NQ": ("E-mini Nasdaq-100", "^IXIC"), "TY": ("10-летние казначейские", "IEF"),
+       "JY": ("Японская иена", "DEXJPUS"), "BTC": ("Биткоин (CME)", "BTC-USD")}
+COT_LAG_DAYS = 3  # отчёт за вторник публикуют в пятницу
+
+
+def zscore(x: pd.Series, window: int = 156, min_periods: int = 104) -> pd.Series:
+    """Отклонение от средней за ~3 года (156 недель) в стандартных отклонениях."""
+    return ((x - x.rolling(window, min_periods=min_periods).mean()) / x.rolling(window, min_periods=min_periods).std()
+            ).dropna()
+
+
+def asset_price(load, key: str) -> pd.Series:
+    """Цена актива для фьючерса: иену берём как доллары за иену (рост = иена крепнет), как в фьючерсе CME."""
+    p = load(COT[key][1]).dropna()
+    return 1 / p if key == "JY" else p
+
+
+def extremes_study(load, key: str, group: str, side: int, days: int = 20, z: float = 1.5) -> Study:
+    """Что было с ценой актива через days дней после крайней позиции группы (|z| ≥ z), не чаще раза в 4 недели."""
+    x = zscore(load(f"COT_{key}_{group}").dropna())
+    x.index = x.index + pd.Timedelta(days=COT_LAG_DAYS)
+    hits = x[x >= z] if side > 0 else x[x <= -z]
+    px = asset_price(load, key)
+    keep, last = [], None
+    for d in hits.index:
+        if last is None or (d - last).days >= 28:
+            i = px.index.searchsorted(d)
+            if i < len(px):
+                keep.append(px.index[i])
+                last = d
+    return study(px, keep, days)

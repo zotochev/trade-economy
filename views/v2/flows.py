@@ -9,9 +9,10 @@ import streamlit as st
 
 from core import flows as F
 from core import learn, ui
-from core.charts import band_chart, grouped_bars, line_chart
+from core.charts import band_chart, dual_axis_chart, grouped_bars, line_chart
 from core.learn import Example
 from core.series import BY_KEY
+from core.transforms import yoy_pct
 
 ASSETS = {"S&P 500": "^GSPC", "Nasdaq": "^IXIC", "Гособлигации 20+ лет (TLT)": "TLT", "Золото (GLD)": "GLD",
           "Биткоин": "BTC-USD", "Иен за доллар": "DEXJPUS", "Рублей за доллар (курс ЦБ)": "USDRUB_CBR"}
@@ -442,6 +443,108 @@ learn.examples([Example("Таргет волатильности в распро
                 Example("Резкий разворот: тренд проигрывает", ex_trend_bad, normal=False),
                 Example("Продажи модели не предсказывают дальнейшего падения", ex_vol_after, normal=False)],
                key="models")
+
+# ---------- 5. позиционирование ----------
+st.header("5. Кто уже в рынке и с каким плечом")
+st.markdown("Вынужденный поток тем сильнее, чем больше **уже накоплено** позиций в одну сторону: перегруженную "
+            "позицию закрывают все разом. Позиции видны с задержкой — по отчётам CFTC о фьючерсах (раз в неделю) и "
+            "по маржинальному долгу клиентов брокеров (раз в месяц).")
+learn.tags("совпадающий", "спорный")
+rows = []
+for key_, (name_, _) in F.COT.items():
+    lev, am = ui.load(f"COT_{key_}_LEV").dropna(), ui.load(f"COT_{key_}_AM").dropna()
+    zl, za = F.zscore(lev), F.zscore(am)
+    rows.append({"Фьючерс": name_, "Фонды с плечом, % ОИ": round(float(lev.iloc[-1]), 1),
+                 "отклонение от нормы (z)": round(float(zl.iloc[-1]), 1),
+                 "за 4 недели, п.п.": round(float(lev.iloc[-1] - lev.iloc[-5]), 1),
+                 "Управляющие активами, % ОИ": round(float(am.iloc[-1]), 1), "z ": round(float(za.iloc[-1]), 1)})
+st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+st.caption(f"CFTC, отчёт Traders in Financial Futures за {ui.load('COT_ES_LEV').dropna().index[-1]:%d.%m.%Y}. % ОИ — "
+           "чистая позиция (лонг − шорт) в процентах открытого интереса. z — отклонение от средней за 3 года: |z| ≥ 2 "
+           "— позиция необычно перегружена.")
+pick = st.selectbox("Фьючерс", list(F.COT), format_func=lambda k: F.COT[k][0], key="fl_cot")
+st.plotly_chart(line_chart({"Фонды с плечом": cut_years(ui.load(f"COT_{pick}_LEV").dropna(), 10),
+                            "Управляющие активами": cut_years(ui.load(f"COT_{pick}_AM").dropna(), 10)}, units="%",
+                           recessions=ui.recessions(), zero_line=True, height=300), width="stretch")
+
+margin = ui.load("FINRA_MARGIN").dropna()
+mg = yoy_pct(margin).dropna()
+k = st.columns(2)
+k[0].metric("Маржинальный долг (FINRA)", f"${margin.iloc[-1] / 1e6:.2f} трлн", f"{mg.iloc[-1]:+.0f}% за год",
+            delta_color="off", border=True, help=f"Данные за {margin.index[-1]:%m.%Y}.")
+k[1].metric("Рост быстрее, чем в", f"{(mg < mg.iloc[-1]).mean() * 100:.0f}% месяцев", "с 1998 года",
+            delta_color="off", border=True)
+spx_m = spx.resample("MS").last()
+st.plotly_chart(line_chart({"Маржинальный долг, г/г": cut_years(mg, 30),
+                            "S&P 500, г/г": cut_years(yoy_pct(spx_m).dropna(), 30)}, units="%",
+                           recessions=ui.recessions(), zero_line=True, height=300), width="stretch")
+with learn.how_it_works():
+    st.markdown("""
+- **Кто есть кто в отчёте CFTC.** *Управляющие активами* — пенсионные, страховые, паевые фонды: медленные деньги,
+  обычно в лонге. *Фонды с плечом* — хедж-фонды и трендовые фонды: быстрые деньги, именно их закрытие позиций и
+  создаёт резкие движения.
+- **Шорт ≠ ставка на падение.** Большой шорт фондов с плечом в S&P и казначейских облигациях — в основном
+  **базисный арбитраж**: шорт фьючерса против покупки самих бумаг. Поэтому смотрим не на уровень, а на отклонение
+  от нормы (z).
+- **Позиция — это топливо, а не спусковой крючок.** Перегруженная позиция показывает, насколько сильным будет
+  движение, **если** что-то его запустит, — но не когда.
+- **Маржинальный долг** — плечо частных инвесторов. Быстрый рост — плечо копится; при падении рынка — маржин-коллы.
+""")
+
+
+def ex_yen():
+    lev = ui.load("COT_JY_LEV").dropna()["2024-03":"2024-10"]
+    yen = (1 / ui.load("DEXJPUS").dropna())["2024-03":"2024-10"] * 100
+    st.plotly_chart(dual_axis_chart(("Фонды с плечом в иене, % ОИ", lev, "%"), ("Иена, центов за 100 иен", yen, "")),
+                    width="stretch")
+    st.markdown(
+        f"К концу июня 2024 года фонды с плечом держали шорт иены на {-lev.min():.0f}% открытого интереса — иена была "
+        f"главной валютой фондирования керри-трейда. После повышения ставки Банком Японии 31 июля шорт закрыли за "
+        f"пару недель почти до нуля ({-lev['2024-08-13']:.0f}%). Это вынужденная покупка иены — она разогнала её "
+        f"укрепление и распродажу по всему миру 5 августа.")
+
+
+def ex_margin():
+    fwd = (spx_m.shift(-12) / spx_m - 1) * 100
+    d = pd.concat({"g": mg, "fwd": fwd}, axis=1, sort=True).dropna()
+    d["Рост маржинального долга за год"] = pd.qcut(d["g"], 4, labels=["нижняя четверть", "2-я", "3-я",
+                                                                      "верхняя четверть"])
+    t = d.groupby("Рост маржинального долга за год", observed=True)["fwd"].agg(["mean", "median"])
+    t.columns = ["S&P за следующие 12 мес., среднее", "медиана"]
+    st.plotly_chart(grouped_bars(t, units="%", height=280), width="stretch")
+    hot = sorted(set(mg[mg >= 35].index.year))
+    st.markdown(
+        f"Когда маржинальный долг растёт быстрее всего, следующий год для S&P в среднем слабее. Рост больше 35% за год "
+        f"был в {', '.join(map(str, hot))} годах — рядом с вершинами 2000, 2007 и 2021 годов, но иногда за год и "
+        f"больше до них. Это предупреждение о накопленном плече, а не сигнал момента: окна по 12 месяцев "
+        f"перекрываются, и независимых наблюдений здесь немного.")
+
+
+def ex_cot_noise():
+    rows_ = []
+    for key_, (name_, _) in F.COT.items():
+        for g, gname in (("LEV", "фонды с плечом"), ("AM", "управляющие")):
+            for side, sname in ((1, "крайний лонг"), (-1, "крайний шорт")):
+                try:
+                    s_ = F.extremes_study(ui.load, key_, g, side)
+                except ValueError:
+                    continue
+                e, t = F.window_effect(s_, 1, 20)
+                rows_.append({"Фьючерс": name_, "Группа": gname, "Позиция": sname, "Случаев": s_.n,
+                              "Цена за 20 дней после, %": round(e, 2), "t": round(t, 1)})
+    df_ = pd.DataFrame(rows_)
+    st.dataframe(df_, hide_index=True, width="stretch")
+    st.markdown(
+        f"Крайние позиции (|z| ≥ 1,5) по всем фьючерсам и группам: ни в одном случае |t| не достигает 2 "
+        f"(максимум {df_['t'].abs().max():.1f}). На горизонте месяца перегруженность сама по себе не предсказывает "
+        f"цену — разворот случается, только когда приходит триггер (решение ЦБ, шок, маржин-колл). Используйте "
+        f"позиционирование как оценку силы возможного движения, а не его направления.")
+
+
+learn.examples([Example("Иена, 2024: фонды закрывают шорт", ex_yen),
+                Example("Маржинальный долг перед вершинами", ex_margin),
+                Example("Крайние позиции не предсказывают месяц вперёд", ex_cot_noise, normal=False)],
+               key="positions")
 
 learn.next_steps([7, 4], "Вынужденные потоки ускоряют любое звено цепочки, но сильнее всего видны в ценах активов "
                          "(слой 7) и в финансовых условиях (слой 4): распродажа по марже сама ужесточает условия.")
