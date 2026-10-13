@@ -5,7 +5,9 @@
 import pandas as pd
 import streamlit as st
 
-from core import curve, growth, inflation, learn, markets, policy, structure, ui
+from datetime import date, timedelta
+
+from core import curve, flows, growth, inflation, learn, markets, policy, structure, ui
 from core.transforms import yoy_pct
 
 # Как импульс передаётся от слоя к следующему: (что передаётся, типичный лаг)
@@ -26,6 +28,17 @@ def ago(s: pd.Series, months: int) -> float:
 
 def answer(num: int) -> tuple[str, str, str]:
     """Ответ слоя на его вопрос: (вывод одной фразой, числа-обоснование, цвет)."""
+    if num == 8:
+        try:
+            ev = flows.calendar(date.today(), date.today() + timedelta(days=7))
+        except Exception:
+            return "Календарь вынужденных потоков недоступен", "Сервис trade-news не отвечает.", "gray"
+        big = [e for e in ev if e.get("major") and e["type"] not in ("ipo_lockup", "earnings", "buyback_blackout")]
+        if not big:
+            return "На неделе крупных вынужденных потоков нет", "Экспираций, конца квартала, ребалансировок и " \
+                   "крупных разлоков в ближайшие 7 дней в календаре нет.", "gray"
+        return (f"На неделе {len(big)} крупных вынужденных потоков",
+                "; ".join(f"{e['title']} ({e['date'][8:]}.{e['date'][5:7]})" for e in big[:4]) + ".", "orange")
     if num == 1:
         head, color, x = structure.verdict(ui.load)
         return (head, f"Госдолг {x.d:.0f}% ВВП. Средняя ставка по долгу {x.r_avg:.1f}%, по новым 10-летним займам "
@@ -101,6 +114,9 @@ with learn.how_it_works("Как читать карту"):
 """)
 
 for layer in learn.LAYERS:
+    if layer.over:
+        st.markdown("<div style='text-align:center;opacity:.75'>⟲ поверх всей цепочки: потоки, которые толкают цену "
+                    "независимо от фундамента · <b>часы – недели</b></div>", unsafe_allow_html=True)
     with st.container(border=True):
         left, right = st.columns([5, 1], vertical_alignment="center")
         with left:

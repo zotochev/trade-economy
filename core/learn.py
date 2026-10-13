@@ -21,6 +21,7 @@ class Layer:
     question: str          # на какой вопрос отвечает слой
     page: str | None       # путь к экрану новой версии; None — слой ещё не построен
     old_page: str | None = None  # экран старой версии, где пока смотреть данные слоя
+    over: bool = False           # не звено цепочки, а слой поверх неё (вынужденные потоки ускоряют любое звено)
 
 
 LAYERS = [
@@ -33,7 +34,10 @@ LAYERS = [
     Layer(5, "Рост и риск рецессии", "Экономика ускоряется или замедляется?", "views/v2/growth.py"),
     Layer(6, "Инфляция", "Куда идут цены и устойчиво ли это?", "views/v2/inflation.py"),
     Layer(7, "Рынки", "Что всё это значит для акций, облигаций и золота?", "views/v2/markets.py"),
+    Layer(8, "Вынужденные потоки", "Кто обязан купить или продать в ближайшие дни — независимо от фундамента?",
+          "views/v2/flows.py", over=True),
 ]
+CHAIN = [l for l in LAYERS if not l.over]
 BY_NUM = {l.num: l for l in LAYERS}
 
 # Метки сигнала: тип по времени и надёжность (насколько сигнал проверен вне выборки)
@@ -45,13 +49,15 @@ HELP_PAGE = "views/v2/help.py"
 
 def chain_strip(current: int) -> str:
     """Цепочка слоёв одной строкой с выделенным текущим: 1 → 2 → **4** → …"""
-    return " → ".join(f"**:blue[{l.num}. {l.title}]**" if l.num == current else f"{l.num}" for l in LAYERS)
+    chain = " → ".join(f"**:blue[{l.num}. {l.title}]**" if l.num == current else f"{l.num}" for l in CHAIN)
+    over = BY_NUM.get(current)
+    return chain + (f" · **:blue[{over.num}. {over.title}]** — поверх цепочки" if over and over.over else "")
 
 
 def layer_header(num: int, lead: str) -> None:
     """Заголовок слоя: номер, место в цепочке и короткая вводная. Ответ слоя — в takeaway() под ним."""
     left, right = st.columns([5, 1], vertical_alignment="bottom")
-    left.caption(f"Слой {num} из {len(LAYERS)} · " + chain_strip(num))
+    left.caption(("Поверх цепочки · " if BY_NUM[num].over else f"Слой {num} из {len(CHAIN)} · ") + chain_strip(num))
     with right:
         help_link("Как читать экран")
     st.title(BY_NUM[num].title)

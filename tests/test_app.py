@@ -138,6 +138,13 @@ check_layer("views/v2/market_rates.py", ["decomp", "expect", "curve", "bonds"], 
 check_layer("views/v2/credit.py", ["fcig", "spread", "banks", "recession"], "финансовые условия")
 check_layer("views/v2/growth.py", ["speed", "slack", "labor", "risk"], "рост и риск рецессии")
 check_layer("views/v2/inflation.py", ["level", "breadth", "mix", "phillips"], "инфляция")
+check_layer("views/v2/flows.py", ["study"], "вынужденные потоки")
+for kind in ["quarter_end", "opex_monthly", "vix_expiry", "russell_recon", "year_end", "ru_tax_period"]:
+    at.selectbox(key="fl_kind").set_value(kind).run()
+    assert not at.exception, (kind, at.exception)
+for asset in ["Биткоин", "Иен за доллар", "Рублей за доллар (курс ЦБ)"]:
+    at.selectbox(key="fl_asset").set_value(asset).run()
+    assert not at.exception, (asset, at.exception)
 check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рынки")
 
 for page in ["views/sectors.py", "views/stock.py", "views/regime.py"]:  # «Подробнее о рынках»

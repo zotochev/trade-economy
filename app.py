@@ -38,6 +38,7 @@ if version == NEW:
             st.Page("views/v2/growth.py", title="5. Рост и риск рецессии", icon="⚙️"),
             st.Page("views/v2/inflation.py", title="6. Инфляция", icon="🔥"),
             st.Page("views/v2/markets.py", title="7. Рынки", icon="💹"),
+            st.Page("views/v2/flows.py", title="8. Вынужденные потоки", icon="🌊"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
         "Подробнее о рынках": [

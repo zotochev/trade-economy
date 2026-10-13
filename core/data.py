@@ -163,6 +163,23 @@ def _fetch_nyfed(keys: list[str]) -> dict[str, pd.Series]:
 
 # ---------- публичный API ----------
 
+CBR_URL = "https://www.cbr.ru/scripts/XML_dynamic.asp"
+CBR_CODES = {"USDRUB_CBR": "R01235"}  # официальный курс ЦБ РФ: ключ ряда → код валюты в API ЦБ
+
+
+def _fetch_cbr(keys: list[str]) -> dict[str, pd.Series]:
+    """Официальные курсы ЦБ РФ (XML_dynamic). Дата — день, с которого курс действует."""
+    out = {}
+    for k in keys:
+        r = requests.get(CBR_URL, params={"date_req1": "01/07/1992", "date_req2": datetime.now().strftime("%d/%m/%Y"),
+                                          "VAL_NM_RQ": CBR_CODES[k]}, timeout=60)
+        r.raise_for_status()
+        rows = re.findall(r'Date="([\d.]+)".*?<Nominal>(\d+)</Nominal><Value>([\d,]+)</Value>', r.text)
+        out[k] = pd.Series([float(v.replace(",", ".")) / int(n) for _, n, v in rows],
+                           index=pd.to_datetime([d for d, _, _ in rows], format="%d.%m.%Y"))
+    return out
+
+
 def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateResult]:
     """Докачать устаревшие ряды (или все переданные, если force)."""
     if keys is None:
@@ -184,7 +201,7 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
 
     # yfinance, Шиллер и файлы ФРС отдают несколько рядов одним запросом
     for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed),
-                       ("nyfed", _fetch_nyfed)):
+                       ("nyfed", _fetch_nyfed), ("cbr", _fetch_cbr)):
         ks = by_src.get(src, [])
         if not ks:
             continue
