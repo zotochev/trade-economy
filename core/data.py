@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import io
+import os
 import re
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -164,7 +165,7 @@ def _fetch_nyfed(keys: list[str]) -> dict[str, pd.Series]:
 # ---------- публичный API ----------
 
 CBR_URL = "https://www.cbr.ru/scripts/XML_dynamic.asp"
-CBR_CODES = {"USDRUB_CBR": "R01235"}  # официальный курс ЦБ РФ: ключ ряда → код валюты в API ЦБ
+CBR_CODES = {"USDRUB_CBR": "R01235", "CNYRUB_CBR": "R01375"}  # официальный курс ЦБ РФ: ключ ряда → код валюты в API ЦБ
 
 
 def _fetch_cbr(keys: list[str]) -> dict[str, pd.Series]:
@@ -214,6 +215,48 @@ def _fetch_finra(keys: list[str]) -> dict[str, pd.Series]:
     return {"FINRA_MARGIN": pd.Series(pd.to_numeric(df.iloc[:, 1]).values, index=idx).sort_index()}
 
 
+TRADE_NEWS_URL = os.environ.get("TRADE_NEWS_URL", "http://127.0.0.1:10000")
+MOEX_FUT = ("Si", "RTS", "CNY")  # фьючерсы Мосбиржи с открытыми позициями физлиц и юрлиц
+
+
+def _fetch_tnru(keys: list[str]) -> dict[str, pd.Series]:
+    """Позиции физлиц на Мосбирже (из trade-news): чистая позиция (лонг − шорт) в % открытого интереса
+    и доля физлиц (людей, а не денег), которые в лонге."""
+    out = {}
+    for a in MOEX_FUT:
+        r = requests.get(f"{TRADE_NEWS_URL}/api/ru/open-positions",
+                         params={"asset": a, "from": "2020-01-01", "to": datetime.now().strftime("%Y-%m-%d")},
+                         timeout=60)
+        r.raise_for_status()
+        rows = [x for x in r.json() if x.get("individuals") and x.get("legal")]  # бывают дни с одной стороной
+        idx = pd.to_datetime([x["date"] for x in rows])
+        ind = pd.DataFrame([x["individuals"] for x in rows], index=idx)
+        oi = ind["long"] + pd.Series([x["legal"]["long"] for x in rows], index=idx)
+        out[f"MOEX_{a}_IND"] = ind["net"] / oi * 100
+        out[f"MOEX_{a}_PERSONS"] = ind["persons_long"] / (ind["persons_long"] + ind["persons_short"]) * 100
+    return out
+
+
+def _fetch_moex_index(keys: list[str]) -> dict[str, pd.Series]:
+    """Индексы Мосбиржи (закрытие по дням) через ISS, постранично по 100 строк."""
+    out = {}
+    for k in keys:
+        rows, start = [], 0
+        while True:
+            r = requests.get(f"https://iss.moex.com/iss/history/engines/stock/markets/index/securities/{k}.json",
+                             params={"iss.meta": "off", "from": "2010-01-01", "start": start,
+                                     "history.columns": "TRADEDATE,CLOSE"}, timeout=30)
+            r.raise_for_status()
+            data = r.json()["history"]["data"]
+            if not data:
+                break
+            rows += data
+            start += len(data)
+        s = pd.Series([c for _, c in rows], index=pd.to_datetime([d for d, _ in rows]), dtype=float)
+        out[k] = s.dropna().groupby(level=0).last()
+    return out
+
+
 def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateResult]:
     """Докачать устаревшие ряды (или все переданные, если force)."""
     if keys is None:
@@ -236,7 +279,8 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
     # yfinance, Шиллер и файлы ФРС отдают несколько рядов одним запросом
     for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed),
                        ("nyfed", _fetch_nyfed), ("cbr", _fetch_cbr), ("cftc", _fetch_cftc),
-                       ("finra", _fetch_finra)):
+                       ("finra", _fetch_finra), ("tnru", _fetch_tnru),
+                       ("moex", _fetch_moex_index)):
         ks = by_src.get(src, [])
         if not ks:
             continue

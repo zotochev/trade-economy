@@ -315,3 +315,39 @@ def extremes_study(load, key: str, group: str, side: int, days: int = 20, z: flo
                 keep.append(px.index[i])
                 last = d
     return study(px, keep, days)
+
+
+# ---------- позиции физлиц на Мосбирже (данные trade-news) ----------
+MOEX = {"Si": ("Доллар/рубль (Si)", "USDRUB_CBR", "курс доллара"), "RTS": ("Индекс РТС (RTS)", "RTSI", "индекс РТС"),
+        "CNY": ("Юань/рубль (CNY)", "CNYRUB_CBR", "курс юаня")}
+MOEX_LAG_DAYS = 2  # позиции публикуют вечером после клиринга; курс ЦБ на дату d установлен по торгам накануне
+
+
+def zscore_daily(x: pd.Series, window: int = 250, min_periods: int = 120) -> pd.Series:
+    """Отклонение от средней за ~год торговых дней в стандартных отклонениях."""
+    return ((x - x.rolling(window, min_periods=min_periods).mean()) / x.rolling(window, min_periods=min_periods).std()
+            ).dropna()
+
+
+def moex_extremes_study(load, asset: str, side: int, days: int = 20, z: float = 1.5) -> Study:
+    """Что было с курсом или индексом через days дней после крайней позиции физлиц (|z| ≥ z), не чаще раза в 4 недели."""
+    x = zscore_daily(load(f"MOEX_{asset}_IND").dropna())
+    hits = x[x >= z] if side > 0 else x[x <= -z]
+    px = load(MOEX[asset][1]).dropna()["2020":]
+    keep, last = [], None
+    for d in hits.index:
+        if last is None or (d - last).days >= 28:
+            i = px.index.searchsorted(d + pd.Timedelta(days=MOEX_LAG_DAYS))
+            if i < len(px):
+                keep.append(px.index[i])
+                last = d
+    return study(px, keep, days)
+
+
+def moex_weekly(load, asset: str) -> pd.DataFrame:
+    """Понедельные (без перекрытий) изменения: позиции физлиц (п.п. ОИ), цены за ту же неделю и за следующую, %."""
+    x = load(f"MOEX_{asset}_IND").dropna()
+    r = np.log(load(MOEX[asset][1]).dropna()).diff() * 100
+    wk = r.rolling(5).sum()
+    return pd.concat({"pos": x.diff(5), "same": wk.reindex(x.index), "next": wk.shift(-6).reindex(x.index)},
+                     axis=1).dropna().iloc[::5]
