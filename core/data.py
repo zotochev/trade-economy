@@ -272,7 +272,7 @@ def _binance_klines(symbol: str) -> pd.DataFrame:
 
 
 def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
-    """Деривативы крипты: фандинг Binance, свечи спота Binance, индекс волатильности Deribit (DVOL)."""
+    """Крипта: фандинг и свечи Binance, DVOL Deribit, выпуск стейблкоинов (DefiLlama), минимумы цен стейблкоинов, потоки в ETF (trade-news)."""
     out = {}
     if any(k.startswith("FUND_") for k in keys):
         out["FUND_BTC"] = _binance_funding("BTCUSDT")
@@ -280,6 +280,29 @@ def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
     if any(k.startswith("BTC_") for k in keys):
         k = _binance_klines("BTCUSDT")
         out["BTC_HIGH"], out["BTC_LOW"] = k["high"], k["low"]
+    if any(k.startswith("STABLE_") for k in keys):
+        r = requests.get("https://stablecoins.llama.fi/stablecoincharts/all", timeout=60)
+        r.raise_for_status()
+        out["STABLE_TOTAL"] = pd.Series({pd.to_datetime(int(x["date"]), unit="s"):
+                                         x["totalCirculatingUSD"]["peggedUSD"] / 1e9 for x in r.json()})
+        for key, sid in (("STABLE_USDT", 1), ("STABLE_USDC", 2)):
+            r = requests.get(f"https://stablecoins.llama.fi/stablecoin/{sid}", timeout=60)
+            r.raise_for_status()
+            out[key] = pd.Series({pd.to_datetime(int(x["date"]), unit="s"): x["circulating"]["peggedUSD"] / 1e9
+                                  for x in r.json()["tokens"]})
+    if any(k.startswith("PEGLOW_") for k in keys):
+        import yfinance as yf
+        low = yf.download(["USDT-USD", "USDC-USD", "DAI-USD"], start="2017-01-01", progress=False,
+                          auto_adjust=False)["Low"]
+        for c in ("USDT", "USDC", "DAI"):
+            out[f"PEGLOW_{c}"] = _drop_unfinished_day(low[f"{c}-USD"].dropna())
+    for asset in ("BTC", "ETH"):
+        if f"ETF_FLOW_{asset}" in keys:  # потоки в спотовые ETF США — копит trade-news с Farside
+            r = requests.get(f"{TRADE_NEWS_URL}/api/etf/flows", timeout=60,
+                             params={"asset": asset, "from": "2024-01-01", "to": datetime.now().strftime("%Y-%m-%d")})
+            r.raise_for_status()
+            out[f"ETF_FLOW_{asset}"] = pd.Series({pd.Timestamp(x["date"]): x["flow_usd_m"]
+                                                  for x in r.json()["totals"]}).sort_index()
     if "DVOL_BTC" in keys:
         rows, end = [], int(datetime.now().timestamp() * 1000)
         while True:

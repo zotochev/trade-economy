@@ -39,11 +39,29 @@ def answer(num: int) -> tuple[str, str, str]:
         _, after = crypto.era_corr(w)
         return head, (f"Корреляция с Nasdaq за год {c:+.2f}: Nasdaq объясняет ≈{c * c * 100:.0f}% движений биткоина "
                       f"(в среднем с 2020 года {after:+.2f}). Связь с ликвидностью ФРС спорная."), color
+    if num == 2:
+        bas, bill = crypto.basis(ui.load), ui.load("DGS3MO").dropna()
+        am, lf = ui.load("COT_BTC_AM").dropna(), ui.load("COT_BTC_LEV").dropna()
+        edge = float(bas.iloc[-1] - bill.iloc[-1] - 0.75)
+        head = ("Базисная сделка выгодна: часть притока в ETF — арбитраж" if edge > 0.5 else
+                "Базисная сделка убыточна — арбитражный приток в ETF иссякает" if edge < -0.5 else
+                "Базисная сделка на грани безубыточности")
+        return head, (f"Базис CME ≈{bas.iloc[-1]:.1f}% годовых против {bill.iloc[-1]:.1f}% у векселей. На CME "
+                      f"управляющие активами {am.iloc[-1]:+.0f}%, фонды с плечом {lf.iloc[-1]:+.0f}% открытого "
+                      f"интереса."), "orange" if edge < -0.5 else "gray"
     if num == 4:
         head, color, f, pct = crypto.lev_verdict(ui.load)
         odds = crypto.liq_odds(crypto.candles(ui.load), [10], {"м": 30})
         return head, (f"Фандинг за неделю {f:.1f}% годовых — выше, чем в {pct:.0f}% дней с 2019 года. С плечом 10x "
                       f"лонг закрывался бы биржей в течение месяца в {odds.iloc[0, 0]:.0f}% случаев."), color
+    if num == 5:
+        g = crypto.supply_growth(ui.load)
+        pct = float((g["2019":] < g.iloc[-1]).mean() * 100)
+        tot = ui.load("STABLE_TOTAL")
+        head = ("Топливо прибывает: стейблкоинов становится заметно больше" if pct >= 70 else
+                "Топливо почти не прибывает" if pct <= 30 else "Топливо прибывает в обычном темпе")
+        return head, (f"Стейблкоинов в обращении ${tot.iloc[-1]:.0f} млрд, {g.iloc[-1]:+.1f}% за 90 дней. Рост "
+                      f"идёт вместе с ценой, а не заранее."), "orange" if pct <= 30 else "gray"
     raise KeyError(num)
 
 

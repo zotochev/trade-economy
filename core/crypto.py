@@ -26,14 +26,16 @@ BLOCKS = [
           "Ставки ФРС, доллар и ликвидность: насколько биткоин ходит вместе с акциями роста.",
           "views/crypto/world.py"),
     Block(2, "Институциональные двери", "среда",
-          "Спотовые ETF, фьючерсы CME и базисная торговля, компании, которые копят биткоин на долг.", None),
+          "Спотовые ETF, фьючерсы CME и базисная торговля, компании, которые копят биткоин на долг.",
+          "views/crypto/doors.py"),
     Block(3, "Регулирование и шоки", "среда",
           "Решения регуляторов, суды, запреты и геополитика — события, которые меняют правила игры.", None),
     Block(4, "Плечо и ликвидации", "устройство",
           "Фьючерсы, цена ликвидации, фандинг, открытый интерес — почему падения в крипте такие резкие.",
           "views/crypto/leverage.py"),
     Block(5, "Биржи, стейблкоины и точки отказа", "устройство",
-          "Где лежат деньги крипты и что ломается: Tether и Circle, депеги, банкротства бирж.", None),
+          "Где лежат деньги крипты и что ломается: Tether и Circle, депеги, банкротства бирж.",
+          "views/crypto/plumbing.py"),
     Block(6, "Предложение и держатели", "устройство",
           "Откуда берутся монеты, майнеры, долгосрочные держатели — кто и когда продаёт.", None),
     Block(7, "Альткоины и токеномика", "устройство",
@@ -262,3 +264,108 @@ def lev_verdict(load: Load) -> tuple[str, str, float, float]:
     if pct <= 20:
         return "Плечо не перегрето: желающих купить в долг мало", "blue", now, pct
     return "Плечо в норме: фандинг около обычного уровня", "gray", now, pct
+
+
+# ---------- блок 2: институциональные двери ----------
+def _last_friday(ts: pd.Timestamp) -> pd.Timestamp:
+    end = ts + pd.offsets.MonthEnd(0)
+    return end - pd.Timedelta(days=(end.weekday() - 4) % 7)
+
+
+def basis(load: Load, smooth: int = 20) -> pd.Series:
+    """Базис CME в % годовых: насколько ближний фьючерс дороже спота, в пересчёте на срок до экспирации
+    (последняя пятница месяца). Оценка: закрытия CME и спота разнесены по времени — сглаживаем медианой."""
+    c = pd.concat({"f": load("BTC=F"), "s": load("BTC-USD")}, axis=1, sort=True).dropna()
+    dte = []
+    for t in c.index:
+        exp = _last_friday(t)
+        if (exp - t).days < 5:  # ближний ряд Yahoo переходит на следующий контракт до экспирации
+            exp = _last_friday(t + pd.offsets.MonthBegin(1))
+        dte.append((exp - t).days)
+    dte = pd.Series(dte, c.index)
+    raw = (c["f"] / c["s"] - 1) * 365 / dte * 100
+    # закрытия CME и спота разнесены на часы; при коротком сроке ошибка умножается на 365/срок — такие дни выкидываем
+    return raw[dte >= 10].rolling(smooth, min_periods=smooth // 2).median().dropna()
+
+
+def treasuries() -> dict | None:
+    """Запасы биткоина у публичных компаний сейчас (CoinGecko). None — источник не ответил."""
+    import requests
+    try:
+        r = requests.get("https://api.coingecko.com/api/v3/companies/public_treasury/bitcoin", timeout=20)
+        r.raise_for_status()
+        return r.json()
+    except Exception:
+        return None
+
+
+def strategy_kpi() -> dict | None:
+    """Капитализация, долг и привилегированные акции Strategy, $ (сайт компании) и деньги на счетах (Yahoo).
+    None — источник не ответил."""
+    import requests
+    import yfinance as yf
+
+    def num(x) -> float:
+        return float(str(x).replace(",", "")) * 1e6
+    try:
+        r = requests.get("https://api.strategy.com/btc/mstrKpiData", timeout=20,
+                         headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120"})
+        r.raise_for_status()
+        d = r.json()[0]
+        out = {"cap": num(d["marketCap"]), "debt": num(d["debt"]), "pref": num(d["pref"])}
+    except Exception:
+        return None
+    try:
+        out["cash"] = float(yf.Ticker("MSTR").info.get("totalCash") or 0)
+    except Exception:
+        out["cash"] = 0.0
+    return out
+
+
+def mnav(kpi: dict, btc_value: float) -> tuple[float, float]:
+    """(mNAV по капитализации, mNAV по стоимости компании = капитализация + долг + префы − деньги)."""
+    ev = kpi["cap"] + kpi["debt"] + kpi["pref"] - kpi["cash"]
+    return kpi["cap"] / btc_value, ev / btc_value
+
+
+def pair_beta(load: Load, a: str, b: str = "BTC-USD", since: str = "2021") -> tuple[float, float]:
+    """(бета, корреляция) недельных движений a к b."""
+    r = np.log(pd.concat({"a": load(a), "b": load(b)}, axis=1, sort=True).dropna()).resample("W-FRI").last()
+    r = r.diff().dropna()[since:]
+    return float(r["a"].cov(r["b"]) / r["b"].var()), float(r["a"].corr(r["b"]))
+
+
+# ---------- блок 5: биржи, стейблкоины и точки отказа ----------
+def supply_growth(load: Load, days: int = 90) -> pd.Series:
+    """Рост стейблкоинов в обращении за days дней, %."""
+    s = load("STABLE_TOTAL")
+    return ((s / s.shift(days) - 1) * 100).dropna()
+
+
+def supply_vs_btc(load: Load, months: int = 3, since: str = "2019") -> dict[str, float]:
+    """Связь изменений стейблкоинов и биткоина по непересекающимся окнам: в том же окне и с опережением на окно."""
+    m = pd.concat({"s": np.log(load("STABLE_TOTAL")).resample("MS").last(),
+                   "b": np.log(load("BTC-USD").dropna()).resample("MS").last()}, axis=1, sort=True).dropna()[since:]
+    d = m.iloc[::months].diff().dropna()
+    return {"same": float(d["s"].corr(d["b"])), "lead": float(d["s"].corr(d["b"].shift(-1))), "n": len(d)}
+
+
+def depegs(load: Load, coin: str, below: float = 0.98) -> pd.DataFrame:
+    """Эпизоды, когда минимум дня стейблкоина опускался ниже below: начало, дней, самая низкая цена."""
+    lo = load(f"PEGLOW_{coin}")
+    bad = lo[lo < below]
+    if bad.empty:
+        return pd.DataFrame(columns=["Дней", "Минимум, $"])
+    ep = (bad.index.to_series().diff() > pd.Timedelta(days=7)).cumsum()
+    g = bad.groupby(ep.values)
+    return pd.DataFrame({"Начало": g.apply(lambda s: s.index[0].date()), "Дней": g.size(), "Минимум, $": g.min()})\
+        .set_index("Начало").sort_values("Минимум, $")
+
+
+def etf_vs_btc(load: Load) -> dict[str, float]:
+    """Потоки в биткоин-ETF и цена по неделям: в ту же неделю, вслед за прошлой неделей цены, перед следующей."""
+    f = load("ETF_FLOW_BTC").resample("W-FRI").sum()
+    b = np.log(load("BTC-USD").dropna()).resample("W-FRI").last().diff() * 100
+    w = pd.concat({"f": f, "b": b}, axis=1, sort=True).dropna()
+    return {"same": float(w["f"].corr(w["b"])), "after": float(w["f"].corr(w["b"].shift(1))),
+            "before": float(w["f"].corr(w["b"].shift(-1))), "n": len(w)}
