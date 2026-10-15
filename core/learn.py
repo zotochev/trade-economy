@@ -143,3 +143,16 @@ def percentile(s: pd.Series, value: float) -> float:
     """Доля истории (в %), когда ряд был ниже value."""
     s = s.dropna()
     return float((s < value).mean() * 100)
+
+
+CRYPTO_MAP = "views/crypto/map.py"
+
+
+def crypto_header(block, total: int, lead: str) -> None:
+    """Заголовок блока страницы крипты: сторона (среда или устройство), номер и вводная."""
+    left, right = st.columns([5, 1], vertical_alignment="bottom")
+    left.caption(f"Крипта · {block.side} · блок {block.num} из {total}")
+    with right:
+        st.page_link(CRYPTO_MAP, label="Карта крипты", icon="🗺️")
+    st.title(block.title)
+    st.markdown(lead)

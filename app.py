@@ -41,6 +41,10 @@ if version == NEW:
             st.Page("views/v2/flows.py", title="8. Вынужденные потоки", icon="🌊"),
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
+        "Крипта": [
+            st.Page("views/crypto/map.py", title="Карта крипты", icon="🗺️", url_path="crypto-map"),
+            st.Page("views/crypto/world.py", title="1. Крипта и мировые деньги", icon="🌍", url_path="crypto-world"),
+        ],
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),
             st.Page("views/sectors.py", title="Сектора и факторы", icon="🏭"),

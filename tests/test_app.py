@@ -150,6 +150,10 @@ for asset in ["Биткоин", "Иен за доллар", "Рублей за �
     assert not at.exception, (asset, at.exception)
 check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рынки")
 
+at.switch_page("views/crypto/map.py").run()  # «Крипта»
+assert not at.exception, at.exception
+check_layer("views/crypto/world.py", ["world"], "крипта: мировые деньги")
+
 for page in ["views/sectors.py", "views/stock.py", "views/regime.py"]:  # «Подробнее о рынках»
     at.switch_page(page).run()
     assert not at.exception, (page, at.exception)
