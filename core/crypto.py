@@ -38,7 +38,8 @@ BLOCKS = [
           "Где лежат деньги крипты и что ломается: Tether и Circle, депеги, банкротства бирж.",
           "views/crypto/plumbing.py"),
     Block(6, "Предложение и держатели", "устройство",
-          "Откуда берутся монеты, майнеры, долгосрочные держатели — кто и когда продаёт.", None),
+          "Откуда берутся монеты, майнеры, долгосрочные держатели — кто и когда продаёт.",
+          "views/crypto/supply.py"),
     Block(7, "Альткоины и токеномика", "устройство",
           "Разлоки, разводнение, сектора — почему альткоины ведут себя иначе, чем биткоин.", None),
     Block(8, "Циклы", "устройство",
@@ -415,3 +416,57 @@ def event_study(load: Load) -> pd.DataFrame:
         rows.append({"Дата": pd.Timestamp(d), "Событие": title, "Вид": kind, "За 2 дня, %": ch(1),
                      "В обычных колебаниях": ch(1) / sigma, "За неделю, %": ch(7), "За месяц, %": ch(30)})
     return pd.DataFrame(rows).sort_values("Дата")
+
+
+# ---------- блок 6: предложение и держатели ----------
+HALVINGS = ["2012-11-28", "2016-07-09", "2020-05-11", "2024-04-20"]
+
+
+def onchain(load: Load) -> pd.DataFrame:
+    """Цена, реализованная цена (средняя цена последнего перемещения монет), MVRV, монеты на биржах (% всех)."""
+    mc, mv, sup = load("CM_MCAP"), load("CM_MVRV"), load("CM_SUPPLY")
+    return pd.DataFrame({"price": mc / sup, "realized": mc / mv / sup, "mvrv": mv,
+                         "exch": load("CM_EXSUP") / sup * 100}).dropna(subset=["price", "mvrv"])
+
+
+def mvrv_table(load: Load, since: str = "2013") -> pd.DataFrame:
+    """Что было с ценой через год в зависимости от MVRV (дни с since)."""
+    o = onchain(load)
+    x = pd.DataFrame({"m": o["mvrv"], "f": (o["price"].shift(-365) / o["price"] - 1) * 100}).dropna()[since:]
+    x["b"] = pd.cut(x["m"], [0, 1, 1.5, 2, 3, 100], labels=["ниже 1", "1–1,5", "1,5–2", "2–3", "выше 3"])
+    t = x.groupby("b", observed=True)["f"].agg(["median", lambda s: (s > 0).mean() * 100, "size"])
+    t.columns = ["Цена через год, медиана %", "Через год выше, % дней", "Дней"]
+    return t
+
+
+def hash_ribbon(load: Load, days: int = 90) -> dict[str, float]:
+    """Проверка «капитуляции майнеров»: средний хешрейт за 30 дней ниже среднего за 60 — капитуляция; её конец —
+    популярный сигнал покупки. Сравниваем цену через days дней после сигнала со всеми днями."""
+    h = load("CM_HASH")
+    p = onchain(load)["price"]
+    cap = h.rolling(30).mean() < h.rolling(60).mean()
+    ends = cap.index[(~cap) & cap.shift(1, fill_value=False)]
+    kept = []
+    for d in ends[ends > "2012"]:
+        if not kept or (d - kept[-1]).days > 60:
+            kept.append(d)
+    f = ((p.shift(-days) / p - 1) * 100)
+    ev, base = f.reindex(kept).dropna(), f["2012":].dropna()
+    return {"n": len(ev), "ev_med": float(ev.median()), "ev_up": float((ev > 0).mean() * 100),
+            "base_med": float(base.median()), "base_up": float((base > 0).mean() * 100)}
+
+
+def halving_table(load: Load) -> pd.DataFrame:
+    p = onchain(load)["price"]
+    rows = {}
+    for d in HALVINGS:
+        t = pd.Timestamp(d)
+        rows[t.year] = {"Год до, %": (p[:t].iloc[-1] / p[:t - pd.Timedelta(days=365)].iloc[-1] - 1) * 100,
+                        "Год после, %": (p[:t + pd.Timedelta(days=365)].iloc[-1] / p[:t].iloc[-1] - 1) * 100
+                        if t + pd.Timedelta(days=365) <= p.index[-1] else np.nan}
+    return pd.DataFrame(rows).T
+
+
+def hashprice(load: Load) -> pd.Series:
+    """Выручка майнеров на единицу мощности, $ в день на петахеш в секунду."""
+    return (load("BC_MINER_REV") / (load("CM_HASH") / 1e3)).dropna()

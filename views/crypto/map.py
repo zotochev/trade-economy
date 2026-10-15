@@ -68,6 +68,14 @@ def answer(num: int) -> tuple[str, str, str]:
                 "Топливо почти не прибывает" if pct <= 30 else "Топливо прибывает в обычном темпе")
         return head, (f"Стейблкоинов в обращении ${tot.iloc[-1]:.0f} млрд, {g.iloc[-1]:+.1f}% за 90 дней. Рост "
                       f"идёт вместе с ценой, а не заранее."), "orange" if pct <= 30 else "gray"
+    if num == 6:
+        o = crypto.onchain(ui.load)
+        mv = float(o["mvrv"].iloc[-1])
+        head = ("Держатели в большой прибыли — рынок перегрет" if mv >= 3 else
+                "Держатели в убытке — исторически зона дна" if mv < 1 else "Держатели в умеренной прибыли")
+        return head, (f"MVRV {mv:.2f}: цена ${o['price'].iloc[-1]:,.0f} против средней цены покупки "
+                      f"${o['realized'].iloc[-1]:,.0f}. На биржах {o['exch'].dropna().iloc[-1]:.1f}% всех монет."
+                      ).replace(",", " "), "orange" if mv >= 3 else "green" if mv < 1 else "gray"
     raise KeyError(num)
 
 

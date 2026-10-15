@@ -310,6 +310,33 @@ def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
             r.raise_for_status()
             out[f"ETF_FLOW_{asset}"] = pd.Series({pd.Timestamp(x["date"]): x["flow_usd_m"]
                                                   for x in r.json()["totals"]}).sort_index()
+    cm = {"CM_MVRV": "CapMVRVCur", "CM_SUPPLY": "SplyCur", "CM_HASH": "HashRate", "CM_ISS": "IssTotNtv",
+          "CM_MCAP": "CapMrktCurUSD", "CM_EXSUP": "SplyExNtv"}
+    if any(k in cm for k in keys):  # ончейн-метрики CoinMetrics (бесплатный community API)
+        rows, token = [], None
+        while True:
+            params = {"assets": "btc", "metrics": ",".join(cm.values()), "frequency": "1d", "page_size": 10000,
+                      "start_time": "2010-07-18", "paging_from": "start", "ignore_forbidden_errors": "true"}
+            if token:
+                params["next_page_token"] = token
+            r = requests.get("https://community-api.coinmetrics.io/v4/timeseries/asset-metrics", params=params,
+                             timeout=120)
+            r.raise_for_status()
+            d = r.json()
+            rows += d["data"]
+            token = d.get("next_page_token")
+            if not token:
+                break
+        df = pd.DataFrame(rows)
+        df.index = pd.to_datetime(df["time"]).dt.tz_localize(None)
+        for k, m in cm.items():
+            if m in df:
+                out[k] = pd.to_numeric(df[m], errors="coerce").dropna()
+    if "BC_MINER_REV" in keys:
+        r = requests.get("https://api.blockchain.info/charts/miners-revenue",
+                         params={"timespan": "all", "format": "json", "sampled": "false"}, timeout=60)
+        r.raise_for_status()
+        out["BC_MINER_REV"] = pd.Series({pd.to_datetime(x["x"], unit="s"): x["y"] for x in r.json()["values"]})
     if "DVOL_BTC" in keys:
         rows, end = [], int(datetime.now().timestamp() * 1000)
         while True:

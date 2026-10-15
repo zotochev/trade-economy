@@ -168,6 +168,7 @@ for kind in at.segmented_control(key="exk_rules").options:
             assert not at.exception, (kind, opt, at.exception)
 print("крипта: регулирование ок")
 check_layer("views/crypto/plumbing.py", ["plumbing"], "крипта: биржи и стейблкоины")
+check_layer("views/crypto/supply.py", ["supply"], "крипта: предложение и держатели")
 check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
 for lev in [2, 50]:
     at.select_slider(key="lev_x").set_value(lev).run()
