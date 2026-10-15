@@ -290,6 +290,13 @@ def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
             r.raise_for_status()
             out[key] = pd.Series({pd.to_datetime(int(x["date"]), unit="s"): x["circulating"]["peggedUSD"] / 1e9
                                   for x in r.json()["tokens"]})
+    if any(k.startswith("PEG_") for k in keys):  # дневная цена стейблкоинов DefiLlama — чище минимумов Yahoo
+        r = requests.get("https://stablecoins.llama.fi/stablecoinprices", timeout=60)
+        r.raise_for_status()
+        rows = [x for x in r.json() if x["date"]]
+        for key, gid in (("PEG_USDT", "tether"), ("PEG_USDC", "usd-coin"), ("PEG_DAI", "dai")):
+            out[key] = pd.Series({pd.to_datetime(int(x["date"]), unit="s"): x["prices"][gid]
+                                  for x in rows if x["prices"].get(gid)}).sort_index()
     if any(k.startswith("PEGLOW_") for k in keys):
         import yfinance as yf
         low = yf.download(["USDT-USD", "USDC-USD", "DAI-USD"], start="2017-01-01", progress=False,
