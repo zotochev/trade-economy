@@ -154,6 +154,19 @@ at.switch_page("views/crypto/map.py").run()  # «Крипта»
 assert not at.exception, at.exception
 check_layer("views/crypto/world.py", ["world"], "крипта: мировые деньги")
 check_layer("views/crypto/doors.py", ["doors"], "крипта: институциональные двери")
+at.switch_page("views/crypto/rules.py").run()  # без переключателя периода — примеры и выбор события вручную
+assert not at.exception, at.exception
+for name in at.selectbox(key="rules_pick").options:
+    at.selectbox(key="rules_pick").set_value(name).run()
+    assert not at.exception, (name, at.exception)
+at.toggle(key="ex_rules").set_value(True).run()
+for kind in at.segmented_control(key="exk_rules").options:
+    at.segmented_control(key="exk_rules").set_value(kind).run()
+    for r in [r for r in at.radio if r.key and r.key.startswith("exr_rules_")]:
+        for opt in r.options:
+            r.set_value(opt).run()
+            assert not at.exception, (kind, opt, at.exception)
+print("крипта: регулирование ок")
 check_layer("views/crypto/plumbing.py", ["plumbing"], "крипта: биржи и стейблкоины")
 check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
 for lev in [2, 50]:

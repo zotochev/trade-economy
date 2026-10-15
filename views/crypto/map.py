@@ -49,6 +49,12 @@ def answer(num: int) -> tuple[str, str, str]:
         return head, (f"Базис CME ≈{bas.iloc[-1]:.1f}% годовых против {bill.iloc[-1]:.1f}% у векселей. На CME "
                       f"управляющие активами {am.iloc[-1]:+.0f}%, фонды с плечом {lf.iloc[-1]:+.0f}% открытого "
                       f"интереса."), "orange" if edge < -0.5 else "gray"
+    if num == 3:
+        ev = crypto.event_study(ui.load)
+        by = ev.groupby("Вид")["За 2 дня, %"].mean()
+        return ("Аварии внутри крипты бьют сильнее регуляторов",
+                f"За 2 дня после событий с 2017 года: смягчение правил {by['рег+']:+.1f}%, ужесточение "
+                f"{by['рег−']:+.1f}%, аварии {by['шок']:+.0f}%. Регуляторные новости рынок отыгрывает заранее.", "gray")
     if num == 4:
         head, color, f, pct = crypto.lev_verdict(ui.load)
         odds = crypto.liq_odds(crypto.candles(ui.load), [10], {"м": 30})

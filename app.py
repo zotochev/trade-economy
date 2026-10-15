@@ -45,6 +45,7 @@ if version == NEW:
             st.Page("views/crypto/map.py", title="Карта крипты", icon="🗺️", url_path="crypto-map"),
             st.Page("views/crypto/world.py", title="1. Крипта и мировые деньги", icon="🌍", url_path="crypto-world"),
             st.Page("views/crypto/doors.py", title="2. Институциональные двери", icon="🏦", url_path="crypto-doors"),
+            st.Page("views/crypto/rules.py", title="3. Регулирование и шоки", icon="⚖️", url_path="crypto-rules"),
             st.Page("views/crypto/leverage.py", title="4. Плечо и ликвидации", icon="🎢", url_path="crypto-leverage"),
             st.Page("views/crypto/plumbing.py", title="5. Биржи и стейблкоины", icon="🪙", url_path="crypto-plumbing"),
         ],
