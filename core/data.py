@@ -237,6 +237,66 @@ def _fetch_tnru(keys: list[str]) -> dict[str, pd.Series]:
     return out
 
 
+def _binance_funding(symbol: str) -> pd.Series:
+    """Фандинг бессрочного фьючерса Binance с 2019 года: сумма ставок за сутки, %."""
+    rows, start = [], 1567296000000  # 01.09.2019 — запуск фьючерса
+    while True:
+        r = requests.get("https://fapi.binance.com/fapi/v1/fundingRate",
+                         params={"symbol": symbol, "startTime": start, "limit": 1000}, timeout=30)
+        r.raise_for_status()
+        part = r.json()
+        rows += part
+        if len(part) < 1000:
+            break
+        start = part[-1]["fundingTime"] + 1
+    s = pd.Series([float(x["fundingRate"]) * 100 for x in rows],
+                  index=pd.to_datetime([x["fundingTime"] for x in rows], unit="ms"))
+    return _drop_unfinished_day(s.resample("D").sum())
+
+
+def _binance_klines(symbol: str) -> pd.DataFrame:
+    """Дневные свечи спота Binance с 2017 года (UTC): максимум и минимум дня."""
+    rows, start = [], 1502928000000
+    while True:
+        r = requests.get("https://api.binance.com/api/v3/klines",
+                         params={"symbol": symbol, "interval": "1d", "startTime": start, "limit": 1000}, timeout=30)
+        r.raise_for_status()
+        part = r.json()
+        rows += part
+        if len(part) < 1000:
+            break
+        start = part[-1][0] + 86_400_000
+    df = pd.DataFrame({"high": [float(x[2]) for x in rows], "low": [float(x[3]) for x in rows]},
+                      index=pd.to_datetime([x[0] for x in rows], unit="ms"))
+    return df.iloc[:-1]  # текущий день ещё не закрыт
+
+
+def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
+    """Деривативы крипты: фандинг Binance, свечи спота Binance, индекс волатильности Deribit (DVOL)."""
+    out = {}
+    if any(k.startswith("FUND_") for k in keys):
+        out["FUND_BTC"] = _binance_funding("BTCUSDT")
+        out["FUND_ETH"] = _binance_funding("ETHUSDT")
+    if any(k.startswith("BTC_") for k in keys):
+        k = _binance_klines("BTCUSDT")
+        out["BTC_HIGH"], out["BTC_LOW"] = k["high"], k["low"]
+    if "DVOL_BTC" in keys:
+        rows, end = [], int(datetime.now().timestamp() * 1000)
+        while True:
+            r = requests.get("https://www.deribit.com/api/v2/public/get_volatility_index_data",
+                             params={"currency": "BTC", "start_timestamp": 1609459200000, "end_timestamp": end,
+                                     "resolution": "1D"}, timeout=30)
+            r.raise_for_status()
+            res = r.json()["result"]
+            rows += res["data"]
+            if not res.get("continuation"):
+                break
+            end = res["continuation"]
+        s = pd.Series({pd.to_datetime(x[0], unit="ms"): x[4] for x in rows}).sort_index()
+        out["DVOL_BTC"] = s[~s.index.duplicated()]
+    return out
+
+
 def _fetch_moex_index(keys: list[str]) -> dict[str, pd.Series]:
     """Индексы Мосбиржи (закрытие по дням) через ISS, постранично по 100 строк."""
     out = {}
@@ -280,7 +340,7 @@ def update(keys: list[str] | None = None, force: bool = False) -> list[UpdateRes
     for src, fetch in (("yf", _fetch_yf), ("shiller", lambda ks: _fetch_shiller()), ("fed", _fetch_fed),
                        ("nyfed", _fetch_nyfed), ("cbr", _fetch_cbr), ("cftc", _fetch_cftc),
                        ("finra", _fetch_finra), ("tnru", _fetch_tnru),
-                       ("moex", _fetch_moex_index)):
+                       ("moex", _fetch_moex_index), ("crypto", _fetch_crypto)):
         ks = by_src.get(src, [])
         if not ks:
             continue

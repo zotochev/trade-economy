@@ -153,6 +153,12 @@ check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рын
 at.switch_page("views/crypto/map.py").run()  # «Крипта»
 assert not at.exception, at.exception
 check_layer("views/crypto/world.py", ["world"], "крипта: мировые деньги")
+check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
+for lev in [2, 50]:
+    at.select_slider(key="lev_x").set_value(lev).run()
+    assert not at.exception, (lev, at.exception)
+at.segmented_control(key="lev_side").set_value("шорт").run()
+assert not at.exception, at.exception
 
 for page in ["views/sectors.py", "views/stock.py", "views/regime.py"]:  # «Подробнее о рынках»
     at.switch_page(page).run()

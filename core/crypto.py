@@ -30,7 +30,8 @@ BLOCKS = [
     Block(3, "Регулирование и шоки", "среда",
           "Решения регуляторов, суды, запреты и геополитика — события, которые меняют правила игры.", None),
     Block(4, "Плечо и ликвидации", "устройство",
-          "Фьючерсы, цена ликвидации, фандинг, открытый интерес — почему падения в крипте такие резкие.", None),
+          "Фьючерсы, цена ликвидации, фандинг, открытый интерес — почему падения в крипте такие резкие.",
+          "views/crypto/leverage.py"),
     Block(5, "Биржи, стейблкоины и точки отказа", "устройство",
           "Где лежат деньги крипты и что ломается: Tether и Circle, депеги, банкротства бирж.", None),
     Block(6, "Предложение и держатели", "устройство",
@@ -157,3 +158,107 @@ def verdict(w: pd.DataFrame) -> tuple[str, str, float]:
     if c >= noise():
         return "Биткоин связан с акциями, но большую часть движений задаёт сама крипта", "gray", c
     return "Биткоин сейчас живёт своей жизнью — мировые деньги почти не объясняют его движений", "blue", c
+
+
+# ---------- блок 4: плечо и ликвидации ----------
+MMR = 0.5  # поддерживающая маржа, % позиции: у Binance для небольших позиций BTC ~0,4–0,5%
+
+
+def liq_distance(lev: float, mmr: float = MMR) -> float:
+    """На сколько % цена должна пройти против позиции до ликвидации (изолированная маржа, без комиссий)."""
+    return 100 / lev - mmr
+
+
+def candles(load: Load) -> pd.DataFrame:
+    """Закрытие дня (Yahoo) и максимум/минимум дня (Binance), сутки UTC."""
+    c = load("BTC-USD").dropna()
+    c.index = c.index.normalize()
+    return pd.concat({"c": c, "lo": load("BTC_LOW"), "hi": load("BTC_HIGH")}, axis=1, sort=True).dropna()
+
+
+def adverse_move(df: pd.DataFrame, days: int, side: str = "long") -> pd.Series:
+    """Худшее движение против позиции за следующие days дней от закрытия, % (для лонга — по минимумам)."""
+    if side == "long":
+        ext = df["lo"][::-1].rolling(days, min_periods=days).min()[::-1].shift(-1)
+        return ((df["c"] - ext) / df["c"] * 100).dropna()
+    ext = df["hi"][::-1].rolling(days, min_periods=days).max()[::-1].shift(-1)
+    return ((ext - df["c"]) / df["c"] * 100).dropna()
+
+
+def liq_odds(df: pd.DataFrame, levs: list[float], horizons: dict[str, int], side: str = "long") -> pd.DataFrame:
+    """Доля дней в истории, когда позиция с плечом, открытая на закрытии, была бы ликвидирована за горизонт, %."""
+    out = {}
+    for name, h in horizons.items():
+        m = adverse_move(df, h, side)
+        out[name] = {f"{lev:g}x": float((m >= liq_distance(lev)).mean() * 100) for lev in levs}
+    return pd.DataFrame(out)
+
+
+def funding_ann(load: Load, days: int = 7) -> pd.Series:
+    """Фандинг биткоина за days дней в пересчёте на год, % от размера позиции."""
+    return (load("FUND_BTC").rolling(days).mean() * 365).dropna()
+
+
+def funding_test(load: Load, start: str, end: str, days: int = 30, crash: float = 15) -> pd.DataFrame:
+    """Пятые доли истории по фандингу за неделю: что было с ценой за следующие days дней. Пороги долей — общие
+    для всей истории с 2019 года, чтобы «высокий» значил одно и то же в любом периоде. Окна по days дней
+    перекрываются, поэтому независимых наблюдений примерно в days раз меньше, чем дней."""
+    df = candles(load)
+    f7 = funding_ann(load)
+    fwd = (df["c"].shift(-days) / df["c"] - 1) * 100
+    x = pd.concat({"f": f7, "fwd": fwd, "dd": adverse_move(df, days)}, axis=1, sort=True).dropna()
+    x["q"] = pd.qcut(x["f"], 5, labels=["самый низкий", "низкий", "средний", "высокий", "самый высокий"])
+    x = x[start:end]
+    t = x.groupby("q", observed=True).agg(f=("f", "mean"), fwd=("fwd", "median"),
+                                          crash=("dd", lambda s: (s >= crash).mean() * 100),
+                                          n=("f", lambda s: len(s) / days))
+    t.columns = ["Фандинг, % годовых", f"Цена через {days} дн., медиана %", f"Падение на {crash:g}%+ за {days} дн., %",
+                 "Независимых месяцев ≈"]
+    return t
+
+
+def crash_days(load: Load, n: int = 8, since: str = "2019-09-15") -> pd.DataFrame:
+    """Самые резкие падения внутри дня (минимум к закрытию прошлого дня) и фандинг за неделю до них."""
+    df = candles(load)[since:]
+    drop = (df["lo"] / df["c"].shift(1) - 1) * 100
+    f7 = funding_ann(load).shift(1)
+    top = drop.dropna().sort_values().head(n)
+    return pd.DataFrame({"Падение внутри дня, %": top, "Фандинг за неделю до, % годовых": f7.reindex(top.index)})
+
+
+def live(asset: str = "BTC", days: int = 3) -> dict | None:
+    """Свежие снимки плеча из trade-news: открытый интерес, фандинг, лонги/шорты, ликвидации. None — сервис молчит."""
+    import requests
+    from datetime import datetime, timedelta, timezone
+
+    from core.data import TRADE_NEWS_URL
+    try:
+        r = requests.get(f"{TRADE_NEWS_URL}/api/crypto/leverage", timeout=20,
+                         params={"asset": asset, "from": (datetime.now(timezone.utc) - timedelta(days=days))
+                                 .strftime("%Y-%m-%dT%H:%M:%SZ")})
+        r.raise_for_status()
+        d = r.json()
+    except Exception:
+        return None
+    tot = pd.DataFrame(d["totals"])
+    tot.index = pd.to_datetime(tot.pop("ts"))
+    tot = tot[tot["exchanges"] == tot["exchanges"].max()]  # пока не все биржи отвечают, сумма занижена
+    snap = pd.DataFrame(d["snapshots"])
+    liq = pd.DataFrame(d["liquidations"])
+    if len(liq):
+        liq.index = pd.to_datetime(liq.pop("minute"))
+    return {"totals": tot, "snapshots": snap, "liq": liq}
+
+
+def lev_verdict(load: Load) -> tuple[str, str, float, float]:
+    """(вывод, цвет, фандинг за неделю в % годовых, его перцентиль с 2019 года). Перекос опасен в обе стороны."""
+    f = funding_ann(load)
+    now = float(f.iloc[-1])
+    pct = float((f < now).mean() * 100)
+    if pct >= 80:
+        return "Плечо перегрето: лонги платят много — толпа покупает в долг", "orange", now, pct
+    if now < 0:
+        return "Толпа в шортах: шорты платят лонгам — риск резкого выноса вверх", "orange", now, pct
+    if pct <= 20:
+        return "Плечо не перегрето: желающих купить в долг мало", "blue", now, pct
+    return "Плечо в норме: фандинг около обычного уровня", "gray", now, pct

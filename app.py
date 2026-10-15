@@ -44,6 +44,7 @@ if version == NEW:
         "Крипта": [
             st.Page("views/crypto/map.py", title="Карта крипты", icon="🗺️", url_path="crypto-map"),
             st.Page("views/crypto/world.py", title="1. Крипта и мировые деньги", icon="🌍", url_path="crypto-world"),
+            st.Page("views/crypto/leverage.py", title="4. Плечо и ликвидации", icon="🎢", url_path="crypto-leverage"),
         ],
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),

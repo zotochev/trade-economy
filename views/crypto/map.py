@@ -39,6 +39,11 @@ def answer(num: int) -> tuple[str, str, str]:
         _, after = crypto.era_corr(w)
         return head, (f"Корреляция с Nasdaq за год {c:+.2f}: Nasdaq объясняет ≈{c * c * 100:.0f}% движений биткоина "
                       f"(в среднем с 2020 года {after:+.2f}). Связь с ликвидностью ФРС спорная."), color
+    if num == 4:
+        head, color, f, pct = crypto.lev_verdict(ui.load)
+        odds = crypto.liq_odds(crypto.candles(ui.load), [10], {"м": 30})
+        return head, (f"Фандинг за неделю {f:.1f}% годовых — выше, чем в {pct:.0f}% дней с 2019 года. С плечом 10x "
+                      f"лонг закрывался бы биржей в течение месяца в {odds.iloc[0, 0]:.0f}% случаев."), color
     raise KeyError(num)
 
 
