@@ -255,7 +255,7 @@ def _binance_funding(symbol: str) -> pd.Series:
 
 
 def _binance_klines(symbol: str) -> pd.DataFrame:
-    """Дневные свечи спота Binance с 2017 года (UTC): максимум и минимум дня."""
+    """Дневные свечи спота Binance с 2017 года (UTC): максимум, минимум, закрытие и оборот в $."""
     rows, start = [], 1502928000000
     while True:
         r = requests.get("https://api.binance.com/api/v3/klines",
@@ -266,7 +266,8 @@ def _binance_klines(symbol: str) -> pd.DataFrame:
         if len(part) < 1000:
             break
         start = part[-1][0] + 86_400_000
-    df = pd.DataFrame({"high": [float(x[2]) for x in rows], "low": [float(x[3]) for x in rows]},
+    df = pd.DataFrame({"high": [float(x[2]) for x in rows], "low": [float(x[3]) for x in rows],
+                       "close": [float(x[4]) for x in rows], "qvol": [float(x[7]) for x in rows]},
                       index=pd.to_datetime([x[0] for x in rows], unit="ms"))
     return df.iloc[:-1]  # текущий день ещё не закрыт
 
@@ -277,9 +278,11 @@ def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
     if any(k.startswith("FUND_") for k in keys):
         out["FUND_BTC"] = _binance_funding("BTCUSDT")
         out["FUND_ETH"] = _binance_funding("ETHUSDT")
-    if any(k.startswith("BTC_") for k in keys):
-        k = _binance_klines("BTCUSDT")
-        out["BTC_HIGH"], out["BTC_LOW"] = k["high"], k["low"]
+    for coin in ("BTC", "ETH"):
+        if any(k.startswith(f"{coin}_") for k in keys):
+            k = _binance_klines(f"{coin}USDT")
+            out[f"{coin}_HIGH"], out[f"{coin}_LOW"] = k["high"], k["low"]
+            out[f"{coin}_CLOSE"], out[f"{coin}_QVOL"] = k["close"], k["qvol"]
     if any(k.startswith("STABLE_") for k in keys):
         r = requests.get("https://stablecoins.llama.fi/stablecoincharts/all", timeout=60)
         r.raise_for_status()

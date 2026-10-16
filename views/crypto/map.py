@@ -23,10 +23,10 @@ def answer(num: int) -> tuple[str, str, str]:
                       f"{bill.iloc[-1]:.1f}%."), "orange" if edge < -0.5 else "gray"
     if num == 3:
         ev = crypto.event_study(ui.load)
-        by = ev.groupby("Вид")["За 2 дня, %"].mean()
+        by = ev.groupby("Вид")["За 2 дня, %"].median()
         return ("Аварии внутри крипты бьют сильнее регуляторов",
-                f"За 2 дня после событий с 2017 года: смягчение правил {by['рег+']:+.1f}%, ужесточение "
-                f"{by['рег−']:+.1f}%, аварии {by['шок']:+.0f}%. Регуляторные новости рынок отыгрывает заранее.", "gray")
+                f"За 2 дня после аварий внутри крипты — {by['шок']:+.0f}% (медиана), после смягчения правил — "
+                f"{by['рег+']:+.1f}%.", "gray")
     if num == 4:
         head, color, f, pct = crypto.lev_verdict(ui.load)
         odds = crypto.liq_odds(crypto.candles(ui.load), [10], {"м": 30})
@@ -63,6 +63,15 @@ def answer(num: int) -> tuple[str, str, str]:
         return (f"Медвежья фаза цикла: {days} дней после вершины" if dd < -20 else "Бычья фаза цикла",
                 f"Вершина {p.idxmax():%d.%m.%Y}, цена сейчас {dd:.0f}% от неё. В прошлых циклах дно приходило "
                 f"примерно через год после вершины.", "orange" if dd < -20 else "green")
+    if num == 9:
+        return ("Размер позиции считают от стопа", "Риск на сделку 0,5–2% счёта; плечо — следствие, а не выбор.", "gray")
+    if num == 10:
+        df = crypto.ohlcv(ui.load, "BTC")
+        m = crypto.wyckoff_marks(df)
+        pos = (df["c"].iloc[-1] - m["lo"].iloc[-1]) / (m["hi"].iloc[-1] - m["lo"].iloc[-1]) * 100
+        head = ("Биткоин у низа диапазона 60 дней" if pos < 25 else "Биткоин у верха диапазона 60 дней" if pos > 75
+                else "Биткоин в середине диапазона 60 дней")
+        return head, f"Цена на {pos:.0f}% высоты диапазона. Фазу определяйте по силам модели, а не по пробоям.", "gray"
     raise KeyError(num)
 
 

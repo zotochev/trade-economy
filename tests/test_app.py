@@ -177,6 +177,8 @@ for name in at.selectbox(key="alt_pick").options:
     assert not at.exception, (name, at.exception)
 at.switch_page("views/crypto/cycles.py").run()  # без переключателя периода
 assert not at.exception, at.exception
+at.toggle(key="cyc_all").set_value(True).run()
+assert not at.exception, at.exception
 at.toggle(key="ex_cycles").set_value(True).run()
 for kind in at.segmented_control(key="exk_cycles").options:
     at.segmented_control(key="exk_cycles").set_value(kind).run()
@@ -186,6 +188,20 @@ for kind in at.segmented_control(key="exk_cycles").options:
             r.set_value(opt).run()
             assert not at.exception, (kind, opt, at.exception)
 print("крипта: циклы ок")
+at.switch_page("views/crypto/wyckoff.py").run()  # Вайкофф: монеты, горизонт, примеры
+assert not at.exception, at.exception
+for coin in at.segmented_control(key="wy_coin").options:
+    at.segmented_control(key="wy_coin").set_value(coin).run()
+    assert not at.exception, (coin, at.exception)
+at.segmented_control(key="wy_days").set_value(90).run()
+at.toggle(key="ex_wyckoff").set_value(True).run()
+for kind in at.segmented_control(key="exk_wyckoff").options:
+    at.segmented_control(key="exk_wyckoff").set_value(kind).run()
+    for r in [r for r in at.radio if r.key and r.key.startswith("exr_wyckoff_")]:
+        for opt in r.options:
+            r.set_value(opt).run()
+            assert not at.exception, (kind, opt, at.exception)
+print("крипта: Вайкофф ок")
 at.switch_page("views/crypto/risk.py").run()  # риск-менеджмент: калькулятор, серии, примеры
 assert not at.exception, at.exception
 for stop in [1, 20]:
@@ -194,6 +210,8 @@ for stop in [1, 20]:
 at.select_slider(key="rm_risk").set_value(10.0).run()
 at.segmented_control(key="rm_side").set_value("шорт").run()
 at.select_slider(key="rm_win").set_value(0.3).run()
+at.select_slider(key="rm_lev").set_value(100).run()
+at.select_slider(key="rm_rr").set_value(0.5).run()
 assert not at.exception, at.exception
 at.toggle(key="ex_risk").set_value(True).run()
 for r in [r for r in at.radio if r.key and r.key.startswith("exr_risk_")]:
