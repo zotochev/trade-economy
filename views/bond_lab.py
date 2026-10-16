@@ -248,7 +248,10 @@ c[0].metric("Цена", f"{s.price - acc:.2f}", f"к оплате {s.price:.2f} 
                  "которую продавец уже «заработал».")
 to_offer = use is not None and use is not loaded
 check = ""
-theirs = (loaded.moex_yield_offer if to_offer else None if loaded.offers else loaded.moex_yield) if loaded else None
+# YIELD Мосбиржа считает по цене последней сделки и у бумаг с офертой — к ближайшей оферте; YIELDTOOFFER бывает
+# посчитан по другой цене дня, поэтому сверяемся с YIELD, а YIELDTOOFFER — запасной, если YIELD нет
+theirs = ((loaded.moex_yield or loaded.moex_yield_offer) if to_offer else None if loaded.offers
+          else loaded.moex_yield) if loaded else None
 if theirs and known == BY_PRICE and abs(st.session_state["bl_price"] - loaded.price) < 1e-9:
     check = f"биржа: {theirs:.2f}%"
 c[1].metric("Доходность к оферте" if to_offer else "Доходность к погашению", f"{y:.2f}%",
