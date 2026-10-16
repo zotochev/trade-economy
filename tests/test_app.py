@@ -186,6 +186,21 @@ for kind in at.segmented_control(key="exk_cycles").options:
             r.set_value(opt).run()
             assert not at.exception, (kind, opt, at.exception)
 print("крипта: циклы ок")
+at.switch_page("views/crypto/risk.py").run()  # риск-менеджмент: калькулятор, серии, примеры
+assert not at.exception, at.exception
+for stop in [1, 20]:
+    at.select_slider(key="rm_stop").set_value(stop).run()
+    assert not at.exception, (stop, at.exception)
+at.select_slider(key="rm_risk").set_value(10.0).run()
+at.segmented_control(key="rm_side").set_value("шорт").run()
+at.select_slider(key="rm_win").set_value(0.3).run()
+assert not at.exception, at.exception
+at.toggle(key="ex_risk").set_value(True).run()
+for r in [r for r in at.radio if r.key and r.key.startswith("exr_risk_")]:
+    for opt in r.options:
+        r.set_value(opt).run()
+        assert not at.exception, (opt, at.exception)
+print("крипта: риск-менеджмент ок")
 check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
 for lev in [2, 50]:
     at.select_slider(key="lev_x").set_value(lev).run()
