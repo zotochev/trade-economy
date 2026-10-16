@@ -41,9 +41,10 @@ BLOCKS = [
           "Откуда берутся монеты, майнеры, долгосрочные держатели — кто и когда продаёт.",
           "views/crypto/supply.py"),
     Block(7, "Альткоины и токеномика", "устройство",
-          "Разлоки, разводнение, сектора — почему альткоины ведут себя иначе, чем биткоин.", None),
+          "Разлоки, разводнение, сектора — почему альткоины ведут себя иначе, чем биткоин.",
+          "views/crypto/alts.py"),
     Block(8, "Циклы", "устройство",
-          "Четырёхлетний цикл, типичные просадки и откуда берутся пузыри.", None),
+          "Четырёхлетний цикл, типичные просадки и откуда берутся пузыри.", "views/crypto/cycles.py"),
     Block(9, "Риск-менеджмент и устройство торгов", "практика",
           "Размер позиции, плечо против волатильности, выходные и тонкие сессии, календарь событий.", None),
 ]
@@ -470,3 +471,75 @@ def halving_table(load: Load) -> pd.DataFrame:
 def hashprice(load: Load) -> pd.Series:
     """Выручка майнеров на единицу мощности, $ в день на петахеш в секунду."""
     return (load("BC_MINER_REV") / (load("CM_HASH") / 1e3)).dropna()
+
+
+# ---------- блок 7: альткоины и токеномика ----------
+ALTS = {"ETH-USD": "Эфир", "SOL-USD": "Solana", "XRP-USD": "XRP", "BNB-USD": "BNB", "DOGE-USD": "Dogecoin",
+        "ADA-USD": "Cardano", "AVAX-USD": "Avalanche", "LINK-USD": "Chainlink"}
+
+
+def alt_table(load: Load, since: str = "2021") -> pd.DataFrame:
+    """Альткоины против биткоина по неделям с since: бета, корреляция, во сколько раз волатильнее, просадки."""
+    b = np.log(load("BTC-USD").dropna()).resample("W-FRI").last().diff()[since:]
+    rows = {}
+    for key, name in ALTS.items():
+        p = load(key).dropna()
+        x = np.log(p).resample("W-FRI").last().diff()[since:].dropna()
+        bb = b.reindex(x.index)
+        rows[name] = {"Бета к биткоину": x.cov(bb) / bb.var(), "Корреляция": x.corr(bb),
+                      "Волатильнее биткоина, раз": x.std() / bb.std(),
+                      "От максимума сейчас, %": float((p.iloc[-1] / p.max() - 1) * 100),
+                      f"Худшая просадка с {since}, %": float((p[since:] / p[since:].cummax() - 1).min() * 100)}
+    return pd.DataFrame(rows).T
+
+
+def upcoming_unlocks(days: int = 30) -> list[dict] | None:
+    """Крупные разлоки токенов на ближайшие days дней из календаря trade-news. None — сервис молчит."""
+    from datetime import date, timedelta
+
+    from core import flows
+    try:
+        ev = flows.calendar(date.today(), date.today() + timedelta(days=days))
+    except Exception:
+        return None
+    return [e for e in ev if e["type"] == "token_unlock"]
+
+
+# ---------- блок 8: циклы ----------
+def bear_markets(load: Load, depth: float = -50, since: str = "2011") -> pd.DataFrame:
+    """Медвежьи рынки биткоина (падение от вершины глубже depth %): вершина, дно, глубина, сколько дней падали и
+    сколько возвращались к прежней вершине."""
+    p = onchain(load)["price"][since:]
+    dd = (p / p.cummax() - 1) * 100
+    rows, start, inb = [], None, False
+    for d, v in dd.items():
+        if not inb and v < depth:
+            inb, start = True, p[:d].idxmax()
+        if inb and v == 0:
+            seg = dd[start:d]
+            rows.append((start, seg.idxmin(), seg.min(), d))
+            inb = False
+    if inb:
+        seg = dd[start:]
+        rows.append((start, seg.idxmin(), seg.min(), None))
+    return pd.DataFrame([{"Вершина": a.date(), "Цена на вершине, $": float(p[a]), "Дно": b.date(), "Глубина, %": m,
+                          "Дней до дна": (b - a).days, "Дней от дна до новой вершины": (c - b).days if c is not None
+                          else np.nan} for a, b, m, c in rows])
+
+
+def halving_peaks(load: Load) -> pd.DataFrame:
+    """Через сколько дней после каждого халвинга была вершина цикла (максимум за следующие 900 дней)."""
+    p = onchain(load)["price"]
+    rows = []
+    for h in HALVINGS:
+        t = pd.Timestamp(h)
+        w = p[t:t + pd.Timedelta(days=900)]
+        rows.append({"Халвинг": t.date(), "Вершина": w.idxmax().date(), "Дней после халвинга": (w.idxmax() - t).days,
+                     "Рост от халвинга до вершины, %": float((w.max() / p[:t].iloc[-1] - 1) * 100)})
+    return pd.DataFrame(rows)
+
+
+def yearly_vol(load: Load) -> pd.Series:
+    p = onchain(load)["price"]["2011":]
+    r = np.log(p).diff()
+    return r.groupby(r.index.year).std() * np.sqrt(365) * 100

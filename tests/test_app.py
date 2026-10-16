@@ -169,6 +169,21 @@ for kind in at.segmented_control(key="exk_rules").options:
 print("крипта: регулирование ок")
 check_layer("views/crypto/plumbing.py", ["plumbing"], "крипта: биржи и стейблкоины")
 check_layer("views/crypto/supply.py", ["supply"], "крипта: предложение и держатели")
+check_layer("views/crypto/alts.py", ["alts"], "крипта: альткоины")
+for name in at.selectbox(key="alt_pick").options:
+    at.selectbox(key="alt_pick").set_value(name).run()
+    assert not at.exception, (name, at.exception)
+at.switch_page("views/crypto/cycles.py").run()  # без переключателя периода
+assert not at.exception, at.exception
+at.toggle(key="ex_cycles").set_value(True).run()
+for kind in at.segmented_control(key="exk_cycles").options:
+    at.segmented_control(key="exk_cycles").set_value(kind).run()
+    assert not at.exception, (kind, at.exception)
+    for r in [r for r in at.radio if r.key and r.key.startswith("exr_cycles_")]:
+        for opt in r.options:
+            r.set_value(opt).run()
+            assert not at.exception, (kind, opt, at.exception)
+print("крипта: циклы ок")
 check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
 for lev in [2, 50]:
     at.select_slider(key="lev_x").set_value(lev).run()

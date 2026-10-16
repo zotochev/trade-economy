@@ -49,6 +49,8 @@ if version == NEW:
             st.Page("views/crypto/leverage.py", title="4. Плечо и ликвидации", icon="🎢", url_path="crypto-leverage"),
             st.Page("views/crypto/plumbing.py", title="5. Биржи и стейблкоины", icon="🪙", url_path="crypto-plumbing"),
             st.Page("views/crypto/supply.py", title="6. Предложение и держатели", icon="⛏️", url_path="crypto-supply"),
+            st.Page("views/crypto/alts.py", title="7. Альткоины и токеномика", icon="🧩", url_path="crypto-alts"),
+            st.Page("views/crypto/cycles.py", title="8. Циклы", icon="🔄", url_path="crypto-cycles"),
         ],
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),

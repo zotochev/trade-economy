@@ -76,6 +76,21 @@ def answer(num: int) -> tuple[str, str, str]:
         return head, (f"MVRV {mv:.2f}: цена ${o['price'].iloc[-1]:,.0f} против средней цены покупки "
                       f"${o['realized'].iloc[-1]:,.0f}. На биржах {o['exch'].dropna().iloc[-1]:.1f}% всех монет."
                       ).replace(",", " "), "orange" if mv >= 3 else "green" if mv < 1 else "gray"
+    if num == 7:
+        btc, eth = ui.load("BTC-USD").dropna(), ui.load("ETH-USD").dropna()
+        eb = (eth / btc).dropna()
+        chg = float((eb.iloc[-1] / eb[:eb.index[-1] - pd.Timedelta(days=90)].iloc[-1] - 1) * 100)
+        head = ("Сезон альткоинов: эфир обгоняет биткоин" if chg > 15 else
+                "Альткоины отстают от биткоина" if chg < -5 else "Альткоины идут вровень с биткоином")
+        return head, (f"Эфир к биткоину {eb.iloc[-1]:.4f}, {chg:+.0f}% за 90 дней; на пике 2021 года — "
+                      f"{eb['2021'].max():.4f}."), "green" if chg > 15 else "orange" if chg < -5 else "gray"
+    if num == 8:
+        p = crypto.onchain(ui.load)["price"]
+        dd = float((p.iloc[-1] / p.max() - 1) * 100)
+        days = (p.index[-1] - p.idxmax()).days
+        return (f"Медвежья фаза цикла: {days} дней после вершины" if dd < -20 else "Бычья фаза цикла",
+                f"Вершина {p.idxmax():%d.%m.%Y}, цена сейчас {dd:.0f}% от неё. В прошлых циклах дно приходило "
+                f"примерно через год после вершины.", "orange" if dd < -20 else "green")
     raise KeyError(num)
 
 
