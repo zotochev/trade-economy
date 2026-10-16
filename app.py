@@ -24,6 +24,15 @@ reference = [
     st.Page("views/data_status.py", title="Данные", icon="🗄️"),
 ]
 
+def crypto_pages() -> list:
+    """Блоки крипты в порядке контейнеров модели (Плечо первым); номер — порядковый на экранах."""
+    from core.crypto import BLOCKS
+    icons = {4: "🎢", 5: "🪙", 7: "🧩", 1: "🌍", 3: "⚖️", 2: "🏦", 6: "⛏️", 8: "🔄", 9: "🛡️"}
+    return [st.Page(b.page, title=f"{b.order}. {b.title}", icon=icons[b.num],
+                    url_path="crypto-" + b.page.rsplit("/", 1)[1][:-3])
+            for b in sorted(BLOCKS, key=lambda b: b.order) if b.page]
+
+
 version = st.sidebar.radio("Версия дашборда", [NEW, OLD], key="version",
                            help="Новая версия строит модель экономики как цепочку из семи слоёв. "
                                 "Старая — прежняя панель приборов и тематические экраны.")
@@ -42,16 +51,9 @@ if version == NEW:
             st.Page("views/v2/help.py", title="Справка", icon="❓"),
         ],
         "Крипта": [
-            st.Page("views/crypto/map.py", title="Карта крипты", icon="🗺️", url_path="crypto-map"),
-            st.Page("views/crypto/world.py", title="1. Крипта и мировые деньги", icon="🌍", url_path="crypto-world"),
-            st.Page("views/crypto/doors.py", title="2. Институциональные двери", icon="🏦", url_path="crypto-doors"),
-            st.Page("views/crypto/rules.py", title="3. Регулирование и шоки", icon="⚖️", url_path="crypto-rules"),
-            st.Page("views/crypto/leverage.py", title="4. Плечо и ликвидации", icon="🎢", url_path="crypto-leverage"),
-            st.Page("views/crypto/plumbing.py", title="5. Биржи и стейблкоины", icon="🪙", url_path="crypto-plumbing"),
-            st.Page("views/crypto/supply.py", title="6. Предложение и держатели", icon="⛏️", url_path="crypto-supply"),
-            st.Page("views/crypto/alts.py", title="7. Альткоины и токеномика", icon="🧩", url_path="crypto-alts"),
-            st.Page("views/crypto/cycles.py", title="8. Циклы", icon="🔄", url_path="crypto-cycles"),
-        ],
+            st.Page("views/crypto/model.py", title="Модель крипты за 5 минут", icon="🧠", url_path="crypto-model"),
+            st.Page("views/crypto/map.py", title="Крипта: что сейчас", icon="🗺️", url_path="crypto-map"),
+        ] + crypto_pages(),
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),
             st.Page("views/sectors.py", title="Сектора и факторы", icon="🏭"),

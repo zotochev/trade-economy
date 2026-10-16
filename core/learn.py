@@ -146,13 +146,23 @@ def percentile(s: pd.Series, value: float) -> float:
 
 
 CRYPTO_MAP = "views/crypto/map.py"
+CRYPTO_MODEL = "views/crypto/model.py"
 
 
 def crypto_header(block, total: int, lead: str) -> None:
-    """Заголовок блока страницы крипты: сторона (среда или устройство), номер и вводная."""
+    """Верх блока крипты по методу «Смыслы-Инварианты-Граф»: смысл одной фразой, законы блока, связи
+    «откуда → сюда → куда» — и только потом вводная и цифры."""
+    from core.crypto import FLOW, KIND_COLOR, LAWS, MEANING, container_of
     left, right = st.columns([5, 1], vertical_alignment="bottom")
-    left.caption(f"Крипта · {block.side} · блок {block.num} из {total}")
+    left.caption(f"Крипта · {container_of(block.num).title} · блок {block.order} из {total}")
     with right:
-        st.page_link(CRYPTO_MAP, label="Карта крипты", icon="🗺️")
+        st.page_link(CRYPTO_MODEL, label="Модель крипты", icon="🧠")
     st.title(block.title)
+    with st.container(border=True):
+        st.markdown(f"**Смысл.** {MEANING[block.num]}")
+        laws = [l for l in LAWS if l.block == block.num]
+        if laws:
+            st.markdown("**Законы блока:**\n" + "\n".join(f"- {l.text} :{KIND_COLOR[l.kind]}-badge[{l.kind}]"
+                                                        for l in laws))
+        st.markdown(f"**Связи:** {FLOW[block.num]}")
     st.markdown(lead)

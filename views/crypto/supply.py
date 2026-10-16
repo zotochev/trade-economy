@@ -1,4 +1,4 @@
-"""Крипта, блок 6. Предложение и держатели: откуда берутся новые монеты, когда майнеры вынуждены продавать, по
+"""Крипта, блок 7. Предложение и держатели: откуда берутся новые монеты, когда майнеры вынуждены продавать, по
 какой цене купили нынешние держатели (реализованная цена, MVRV) и сколько монет лежит на биржах."""
 import pandas as pd
 import streamlit as st
@@ -40,13 +40,10 @@ def usd(x: float) -> str:
     return f"${x:,.0f}".replace(",", " ")
 
 
-learn.takeaway(f"MVRV {mv:.2f}: {zone}. Биткоин стоит {usd(o['price'].iloc[-1])}, а средняя цена, по которой "
-               f"монеты последний раз меняли владельца, — {usd(o['realized'].iloc[-1])}. Новые монеты "
-               f"(≈${iss_usd:.0f} млн в день) — мелочь рядом с потоками в ETF (≈${etf_day:.0f} млн в день в одну "
-               f"или другую сторону): цену теперь решает спрос, а не выпуск.",
+learn.takeaway(f"MVRV {mv:.2f}: {zone}. Цену теперь решает спрос, а не выпуск новых монет.",
                "warn" if mv >= 3 else "good" if mv < 1 else "neutral")
 
-c = st.columns(4)
+c = st.columns(3)
 c[0].metric("MVRV", f"{mv:.2f}", f"выше {mv_pct:.0f}% дней с 2013", delta_color="off", border=True,
             help="Рыночная капитализация к реализованной: во сколько раз рынок дороже средней цены, по которой "
                  "монеты последний раз меняли владельца.")
@@ -54,8 +51,6 @@ c[1].metric("Реализованная цена", f"${o['realized'].iloc[-1]:,.
             delta_color="off", border=True)
 c[2].metric("Новых монет в год", f"{infl:.2f}%", f"≈${iss_usd:.0f} млн в день", delta_color="off", border=True,
             help="Инфляция биткоина: выпуск за год к монетам в обращении.")
-c[3].metric("Монет на биржах", f"{o['exch'].dropna().iloc[-1]:.1f}%", "всех биткоинов", delta_color="off",
-            border=True, help="Оценка CoinMetrics по известным адресам бирж: то, что можно быстро продать.")
 
 years = PERIODS[st.segmented_control("Период графиков", list(PERIODS), default="10 лет", key="period") or "10 лет"]
 
@@ -144,8 +139,8 @@ learn.examples([
 
 st.divider()
 st.markdown("**Дальше.** Циклы, которые складываются из держателей, плеча и мировых денег, — блок 8. Спрос, который "
-            "перекрывает выпуск, — блок 2.")
+            "перекрывает выпуск, — блок 6.")
 c = st.columns(3)
-c[0].page_link(learn.CRYPTO_MAP, label="Карта крипты", icon="🗺️")
-c[1].page_link("views/crypto/doors.py", label="2. Институциональные двери", icon="🏦")
-c[2].page_link("views/crypto/leverage.py", label="4. Плечо и ликвидации", icon="🎢")
+c[0].page_link(learn.CRYPTO_MODEL, label="Модель крипты", icon="🧠")
+c[1].page_link("views/crypto/doors.py", label="6. Институциональные двери", icon="🏦")
+c[2].page_link("views/crypto/leverage.py", label="1. Плечо и ликвидации", icon="🎢")
