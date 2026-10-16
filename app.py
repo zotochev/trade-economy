@@ -27,7 +27,7 @@ reference = [
 def crypto_pages() -> list:
     """Блоки крипты в порядке контейнеров модели (Плечо первым); номер — порядковый на экранах."""
     from core.crypto import BLOCKS
-    icons = {4: "🎢", 5: "🪙", 7: "🧩", 1: "🌍", 3: "⚖️", 2: "🏦", 6: "⛏️", 8: "🔄", 9: "🛡️"}
+    icons = {4: "🎢", 5: "🪙", 7: "🧩", 1: "🌍", 3: "⚖️", 2: "🏦", 6: "⛏️", 8: "🔄", 10: "📐", 9: "🛡️"}
     return [st.Page(b.page, title=f"{b.order}. {b.title}", icon=icons[b.num],
                     url_path="crypto-" + b.page.rsplit("/", 1)[1][:-3])
             for b in sorted(BLOCKS, key=lambda b: b.order) if b.page]
