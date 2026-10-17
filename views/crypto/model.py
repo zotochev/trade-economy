@@ -66,7 +66,7 @@ st.header("2. Законы, которые всегда верны")
 st.markdown("Их можно не помнить в цифрах, но держать в голове как правила. Метка — насколько закон надёжен: "
             ":blue-badge[арифметика / механизм / факт] — следует из устройства, :green-badge[проверен на истории] "
             "— видно на данных, :orange-badge[спорный] — данных мало или связь ослабла.")
-for i, law in enumerate(crypto.LAWS, 1):
+for i, law in enumerate([l for l in crypto.LAWS if l.core], 1):
     b = crypto.BY_NUM[law.block]
     left, right = st.columns([5, 2], vertical_alignment="center")
     with left:

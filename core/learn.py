@@ -150,9 +150,9 @@ CRYPTO_MODEL = "views/crypto/model.py"
 
 
 def crypto_header(block, total: int, lead: str) -> None:
-    """Верх блока крипты по методу «Смыслы-Инварианты-Граф»: смысл одной фразой, законы блока, связи
-    «откуда → сюда → куда» — и только потом вводная и цифры."""
-    from core.crypto import FLOW, KIND_COLOR, LAWS, MEANING, container_of
+    """Верх блока крипты по методу «Смыслы-Инварианты-Граф»: смысл одной фразой, скелет блока (его части) или законы,
+    связи «откуда → сюда → куда» — и только потом вводная и цифры."""
+    from core.crypto import BLOCK_SKELETON, FLOW, KIND_COLOR, LAWS, MEANING, container_of
     left, right = st.columns([5, 1], vertical_alignment="bottom")
     left.caption(f"Крипта · {container_of(block.num).title} · блок {block.order} из {total}")
     with right:
@@ -160,9 +160,41 @@ def crypto_header(block, total: int, lead: str) -> None:
     st.title(block.title)
     with st.container(border=True):
         st.markdown(f"**Смысл.** {MEANING[block.num]}")
-        laws = [l for l in LAWS if l.block == block.num]
-        if laws:
-            st.markdown("**Законы блока:**\n" + "\n".join(f"- {l.text} :{KIND_COLOR[l.kind]}-badge[{l.kind}]"
-                                                        for l in laws))
+        parts = BLOCK_SKELETON.get(block.num)
+        if parts:
+            st.markdown("**Из чего состоит блок:**\n" + "\n".join(
+                f"{i}. **{p.title}** — {p.guarantees}" for i, p in enumerate(parts, 1)))
+        else:
+            laws = [l for l in LAWS if l.block == block.num]
+            if laws:
+                st.markdown("**Законы блока:**\n" + "\n".join(f"- {l.text} :{KIND_COLOR[l.kind]}-badge[{l.kind}]"
+                                                            for l in laws))
         st.markdown(f"**Связи:** {FLOW[block.num]}")
     st.markdown(lead)
+
+
+@contextmanager
+def part_section(num: int, key: str):
+    """Раздел-часть блока: номер и название части, зачем она, её законы с метками и оговорками — внутри страница
+    показывает доказательства законов."""
+    from core.crypto import BLOCK_SKELETON, KIND_COLOR, LAWS
+    parts = BLOCK_SKELETON[num]
+    i, part = next((i, p) for i, p in enumerate(parts, 1) if p.key == key)
+    st.header(f"{i}. {part.title}")
+    st.caption(part.why)
+    for law in [l for l in LAWS if l.block == num and l.part == key]:
+        st.markdown(f"> **Закон.** {law.text} :{KIND_COLOR[law.kind]}-badge[{law.kind}]"
+                    + (f"  \n> :gray[Оговорка: {law.caveat}]" if law.caveat else ""))
+    yield
+
+
+def block_graph(num: int) -> str:
+    """Граф блока в формате DOT: части блока — синие, внешние узлы [в скобках] — серые."""
+    from core.crypto import BLOCK_EDGES, BLOCK_SKELETON
+    inner = {p.title for p in BLOCK_SKELETON[num]}
+    nodes = {n for e in BLOCK_EDGES[num] for n in e[:2]}
+    style = "\n".join(f'"{n}" [shape=box, style="rounded,filled", fillcolor="{"#4c78a8" if n in inner else "#9d9d9d"}", '
+                      f'fontcolor=white];' for n in nodes)
+    edges = "\n".join(f'"{a}" -> "{b}" [label="{w}", fontsize=10];' for a, b, w in BLOCK_EDGES[num])
+    return (f'digraph {{ rankdir=TB; bgcolor="transparent"; node [fontname="sans-serif"]; '
+            f'edge [fontname="sans-serif", color="#888888", fontcolor="#888888"]; {style} {edges} }}')
