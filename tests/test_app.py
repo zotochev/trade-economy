@@ -220,6 +220,8 @@ for r in [r for r in at.radio if r.key and r.key.startswith("exr_risk_")]:
         assert not at.exception, (opt, at.exception)
 print("крипта: риск-менеджмент ок")
 check_layer("views/crypto/leverage.py", ["leverage"], "крипта: плечо")
+at.segmented_control(key="cvd_days").set_value(90).run()
+assert not at.exception, at.exception
 for lev in [2, 50]:
     at.select_slider(key="lev_x").set_value(lev).run()
     assert not at.exception, (lev, at.exception)

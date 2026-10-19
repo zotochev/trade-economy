@@ -122,6 +122,9 @@ LAWS = [
         "внутри дня.", "проверен на истории", 4, "Глубину каскада заранее не знать.", part="crowd"),
     Law("Фандинг показывает, сколько плеча смотрит в одну сторону, но не говорит, когда начнётся обвал.", "спорный",
         4, "После 2023 года крайних значений почти нет; 10.10.2025 каскад начался без перегрева.", part="crowd"),
+    Law("CVD показывает, кто давит прямо сейчас — покупатели монет на споте или игроки с плечом во фьючерсах, — но "
+        "на дневках не предсказывает, чем кончится рост.", "спорный", 4,
+        "Одна биржа (Binance); внутри дня CVD информативнее, чем на дневках.", part="crowd", core=False),
     Law("Убыток сверх залога ложится на страховой фонд биржи, а затем на прибыльные позиции другой стороны.",
         "механизм", 4, "Бывает редко, правила у бирж разные.", part="adl", core=False),
     Law("Стейблкоин стоит $1, пока открыто погашение и есть долларовые резервы.", "механизм", 5,
@@ -877,3 +880,41 @@ def ranges(load: Load, coin: str = "BTC", width: float = 30, min_days: int = 30,
         else:
             i += 1
     return pd.DataFrame(rows)
+
+
+
+# ---------- CVD: кто давит — спот или плечо ----------
+def cvd(load: Load, window: int = 30) -> pd.DataFrame:
+    """Дельта объёма: агрессивные покупки минус агрессивные продажи (по рынку), $. Для спота и фьючерса биткоина —
+    накопленная (CVD) и доля чистого давления за window дней в % оборота, в том числе относительно обычного уровня за
+    прошлый год (у Binance дельта спота почти всегда ниже нуля — сравнивать с нулём нельзя)."""
+    d = pd.concat({"c": load("BTC_CLOSE"), "sv": load("BTC_QVOL"), "sb": load("BTC_TBUY"),
+                   "fv": load("BTCPERP_QVOL"), "fb": load("BTCPERP_TBUY")}, axis=1, sort=True).dropna()
+    d["sd"], d["fd"] = 2 * d["sb"] - d["sv"], 2 * d["fb"] - d["fv"]
+    out = pd.DataFrame({"c": d["c"], "cvd_spot": d["sd"].cumsum(), "cvd_perp": d["fd"].cumsum()})
+    for k, dv, v in (("spot", "sd", "sv"), ("perp", "fd", "fv")):
+        r = d[dv].rolling(window).sum() / d[v].rolling(window).sum() * 100
+        out[f"{k}_press"] = r - r.rolling(365, min_periods=180).median()
+    return out
+
+
+def cvd_test(load: Load, days: int = 30, window: int = 30) -> pd.DataFrame:
+    """Рост больше 15% за window дней: кто вёл — спот или фьючерс (по давлению относительно нормы), и что было с
+    ценой через days дней; для сравнения — все такие росты и обычный день."""
+    x = cvd(load, window)
+    ret = (x["c"] / x["c"].shift(window) - 1) * 100
+    fwd = (x["c"].shift(-days) / x["c"] - 1) * 100
+    up = ret > 15
+    cases = {"Рост: вёл спот": up & (x["spot_press"] > x["perp_press"]),
+             "Рост: вело плечо (фьючерс)": up & (x["perp_press"] > x["spot_press"]),
+             "Все росты больше 15%": up,
+             "Цена стоит, сильные покупки спота (поглощение)":
+                 (ret.abs() < 5) & (x["spot_press"] > x["spot_press"].rolling(365).quantile(0.8))}
+    rows = {}
+    for name, mask in cases.items():
+        f = fwd.reindex(_thin(mask[mask.fillna(False)].index, 30)).dropna()
+        rows[name] = {"Случаев": len(f), f"Через {days} дн., медиана %": f.median(), "Цена выше, %": (f > 0).mean() * 100}
+    base = fwd.dropna()
+    rows["Обычный день"] = {"Случаев": len(base), f"Через {days} дн., медиана %": base.median(),
+                            "Цена выше, %": (base > 0).mean() * 100}
+    return pd.DataFrame(rows).T

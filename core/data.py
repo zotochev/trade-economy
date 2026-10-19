@@ -254,11 +254,13 @@ def _binance_funding(symbol: str) -> pd.Series:
     return _drop_unfinished_day(s.resample("D").sum())
 
 
-def _binance_klines(symbol: str) -> pd.DataFrame:
-    """Дневные свечи спота Binance с 2017 года (UTC): максимум, минимум, закрытие и оборот в $."""
-    rows, start = [], 1502928000000
+def _binance_klines(symbol: str, futures: bool = False) -> pd.DataFrame:
+    """Дневные свечи Binance (UTC): максимум, минимум, закрытие, оборот в $ и агрессивные покупки в $ (по рынку).
+    futures — бессрочный фьючерс USDT-M (с 2019 года), иначе спот (с 2017)."""
+    rows, start = [], 1567296000000 if futures else 1502928000000
+    url = "https://fapi.binance.com/fapi/v1/klines" if futures else "https://api.binance.com/api/v3/klines"
     while True:
-        r = requests.get("https://api.binance.com/api/v3/klines",
+        r = requests.get(url,
                          params={"symbol": symbol, "interval": "1d", "startTime": start, "limit": 1000}, timeout=30)
         r.raise_for_status()
         part = r.json()
@@ -267,7 +269,8 @@ def _binance_klines(symbol: str) -> pd.DataFrame:
             break
         start = part[-1][0] + 86_400_000
     df = pd.DataFrame({"high": [float(x[2]) for x in rows], "low": [float(x[3]) for x in rows],
-                       "close": [float(x[4]) for x in rows], "qvol": [float(x[7]) for x in rows]},
+                       "close": [float(x[4]) for x in rows], "qvol": [float(x[7]) for x in rows],
+                       "tbuy": [float(x[10]) for x in rows]},
                       index=pd.to_datetime([x[0] for x in rows], unit="ms"))
     return df.iloc[:-1]  # текущий день ещё не закрыт
 
@@ -282,7 +285,10 @@ def _fetch_crypto(keys: list[str]) -> dict[str, pd.Series]:
         if any(k.startswith(f"{coin}_") for k in keys):
             k = _binance_klines(f"{coin}USDT")
             out[f"{coin}_HIGH"], out[f"{coin}_LOW"] = k["high"], k["low"]
-            out[f"{coin}_CLOSE"], out[f"{coin}_QVOL"] = k["close"], k["qvol"]
+            out[f"{coin}_CLOSE"], out[f"{coin}_QVOL"], out[f"{coin}_TBUY"] = k["close"], k["qvol"], k["tbuy"]
+    if any(k.startswith("BTCPERP_") for k in keys):
+        k = _binance_klines("BTCUSDT", futures=True)
+        out["BTCPERP_QVOL"], out["BTCPERP_TBUY"] = k["qvol"], k["tbuy"]
     if any(k.startswith("STABLE_") for k in keys):
         r = requests.get("https://stablecoins.llama.fi/stablecoincharts/all", timeout=60)
         r.raise_for_status()
