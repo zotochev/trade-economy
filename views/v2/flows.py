@@ -55,6 +55,12 @@ def digest(events: list[dict]) -> dict[date, list[str]]:
         elif e["type"] != "buyback_blackout":
             mark = "**" if e.get("major") else ""
             est = " _(оценка)_" if e.get("precision") == "estimated" else ""
+            start, end = date.fromisoformat(e["date"]), date.fromisoformat(e.get("end_date") or e["date"])
+            if start < today <= end and end > start:  # окно уже идёт: один раз, с периодом и объёмом, а не «новое сегодня»
+                size = (f", {e['size']:+.1f} млрд ₽ в день" if e.get("size") is not None
+                        and e.get("size_unit") == "rub_bn_day" else "")
+                by_day[today].insert(0, f"{mark}Идёт {start:%d.%m}–{end:%d.%m}: {e['title']}{mark}{size}")
+                continue
             by_day[d].append(f"{mark}{e['title']}{mark}{est} — {e['details']}" if e.get("details") else
                              f"{mark}{e['title']}{mark}{est}")
     for (d, t), names in bulk.items():
