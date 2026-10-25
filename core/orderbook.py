@@ -73,14 +73,18 @@ def history(asset: str = "BTC", hours: int = 24) -> pd.DataFrame | None:
     return df
 
 
+PERP_SET = ("binance_perp", "okx_perp")  # оба всегда покрывают ±0,1% на BTC и ETH; Bybit (500 уровней) стоит на краю
+#                                          полосы и то попадает, то выпадает — сумма прыгала бы без реальных изменений
+
+
 def by_kind(snap: pd.DataFrame, band: str = "01") -> dict[str, dict]:
-    """Сумма заявок ±0,1% по видам рынка в одном снимке: спот и фьючерсы. В сумму идут только площадки, у которых
-    стакан дотянулся до полосы с обеих сторон, — иначе перевес исказится."""
+    """Сумма заявок ±0,1% по видам рынка в одном снимке: спот (Binance) и фьючерсы (фиксированный набор PERP_SET).
+    Если в снимке нет какой-то площадки набора или её стакан не дотянулся до полосы — вид рынка пропускается: сумма по
+    разному набору площадок дала бы ложные скачки глубины."""
     out = {}
-    for kind, pref in (("spot", "binance_spot"), ("perp", "_perp")):
-        rows = snap[snap["venue"].str.endswith(pref) if pref.startswith("_") else snap["venue"] == pref]
-        rows = rows.dropna(subset=[f"bid_{band}", f"ask_{band}"])
-        if len(rows):
+    for kind, venues in (("spot", ("binance_spot",)), ("perp", PERP_SET)):
+        rows = snap[snap["venue"].isin(venues)].dropna(subset=[f"bid_{band}", f"ask_{band}"])
+        if len(rows) == len(venues):
             out[kind] = {"bids": float(rows[f"bid_{band}"].sum()), "asks": float(rows[f"ask_{band}"].sum()),
                          "venues": ", ".join(NAMES.get(v.split("_")[0], v) for v in rows["venue"]),
                          "mid": float(rows["mid"].mean())}
