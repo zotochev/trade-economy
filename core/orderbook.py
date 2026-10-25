@@ -10,6 +10,7 @@ import requests
 
 Load = Callable[[str], pd.Series]
 VENUES = {"spot": ("https://api.binance.com/api/v3", 5000), "perp": ("https://fapi.binance.com/fapi/v1", 1000)}
+NAMES = {"binance": "Binance", "bybit": "Bybit", "okx": "OKX"}
 BAND = 0.1  # ±% от середины: стакан бессрочного фьючерса Binance (limit=1000) покрывает только около ±0,15%
 
 
@@ -51,3 +52,36 @@ def liquidations(live: dict | None, hours: int = 1) -> dict[str, float] | None:
     w = liq[liq.index > liq.index.max() - pd.Timedelta(hours=hours)]
     return {"long": float(w.loc[w["side"] == "long", "usd"].sum()),
             "short": float(w.loc[w["side"] == "short", "usd"].sum())}
+
+
+def history(asset: str = "BTC", hours: int = 24) -> pd.DataFrame | None:
+    """Снимки глубины из trade-news (раз в 5 минут, Binance спот, Binance/Bybit/OKX фьючерсы). None — сервис молчит."""
+    from datetime import datetime, timedelta, timezone
+
+    from core.data import TRADE_NEWS_URL
+    try:
+        r = requests.get(f"{TRADE_NEWS_URL}/api/crypto/orderbook", timeout=20,
+                         params={"asset": asset, "from": (datetime.now(timezone.utc) - timedelta(hours=hours))
+                                 .strftime("%Y-%m-%dT%H:%M:%SZ")})
+        r.raise_for_status()
+        df = pd.DataFrame(r.json()["snapshots"])
+    except Exception:
+        return None
+    if df.empty:
+        return None
+    df["ts"] = pd.to_datetime(df["ts"])
+    return df
+
+
+def by_kind(snap: pd.DataFrame, band: str = "01") -> dict[str, dict]:
+    """Сумма заявок ±0,1% по видам рынка в одном снимке: спот и фьючерсы. В сумму идут только площадки, у которых
+    стакан дотянулся до полосы с обеих сторон, — иначе перевес исказится."""
+    out = {}
+    for kind, pref in (("spot", "binance_spot"), ("perp", "_perp")):
+        rows = snap[snap["venue"].str.endswith(pref) if pref.startswith("_") else snap["venue"] == pref]
+        rows = rows.dropna(subset=[f"bid_{band}", f"ask_{band}"])
+        if len(rows):
+            out[kind] = {"bids": float(rows[f"bid_{band}"].sum()), "asks": float(rows[f"ask_{band}"].sum()),
+                         "venues": ", ".join(NAMES.get(v.split("_")[0], v) for v in rows["venue"]),
+                         "mid": float(rows["mid"].mean())}
+    return out
