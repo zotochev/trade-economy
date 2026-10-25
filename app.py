@@ -54,6 +54,9 @@ if version == NEW:
             st.Page("views/crypto/model.py", title="Модель крипты за 5 минут", icon="🧠", url_path="crypto-model"),
             st.Page("views/crypto/map.py", title="Крипта: что сейчас", icon="🗺️", url_path="crypto-map"),
         ] + crypto_pages(),
+        "Торговля": [
+            st.Page("views/chain/crypto_chain.py", title="Крипта: цепочка до цены", icon="⛓️", url_path="chain-crypto"),
+        ],
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),
             st.Page("views/sectors.py", title="Сектора и факторы", icon="🏭"),

@@ -150,6 +150,8 @@ for asset in ["Биткоин", "Иен за доллар", "Рублей за �
     assert not at.exception, (asset, at.exception)
 check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рынки")
 
+at.switch_page("views/chain/crypto_chain.py").run()  # «Торговля»: цепочка до цены
+assert not at.exception, at.exception
 at.switch_page("views/crypto/model.py").run()  # «Крипта»: модель за 5 минут
 assert not at.exception, at.exception
 at.switch_page("views/crypto/map.py").run()  # «Крипта»
