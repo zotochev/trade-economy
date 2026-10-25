@@ -56,6 +56,7 @@ if version == NEW:
         ] + crypto_pages(),
         "Торговля": [
             st.Page("views/chain/crypto_chain.py", title="Крипта: цепочка до цены", icon="⛓️", url_path="chain-crypto"),
+            st.Page("views/chain/objective.py", title="Целевая функция", icon="🎯", url_path="objective"),
         ],
         "Подробнее о рынках": [
             st.Page("views/bond_lab.py", title="Лаборатория облигаций", icon="🧪"),

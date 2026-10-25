@@ -152,6 +152,11 @@ check_layer("views/v2/markets.py", ["identity", "value", "mix", "gold"], "рын
 
 at.switch_page("views/chain/crypto_chain.py").run()  # «Торговля»: цепочка до цены
 assert not at.exception, at.exception
+at.switch_page("views/chain/objective.py").run()  # «Торговля»: целевая функция
+assert not at.exception, at.exception
+for pk in ("smooth", "expect", "compound"):
+    at.segmented_control[0].set_value(pk).run()
+    assert not at.exception, (pk, at.exception)
 at.switch_page("views/crypto/model.py").run()  # «Крипта»: модель за 5 минут
 assert not at.exception, at.exception
 at.switch_page("views/crypto/map.py").run()  # «Крипта»
