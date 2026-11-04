@@ -84,6 +84,15 @@ class RuBond:
                          else np.append(self.unknown[keep], False), "dates": dates, "maturity": d})
 
 
+def share_name(query: str) -> str | None:
+    """Название акции Мосбиржи, если такой тикер торгуется (для подсказки на странице акции)."""
+    q = query.strip().upper()
+    rows = _rows(_get("/securities", q=q, engine="stock", market="shares",
+                      **{"securities.columns": "secid,shortname,is_traded"}), "securities")
+    hit = [r for r in rows if str(r["secid"]).upper() == q]
+    return hit[0]["shortname"] if hit else None
+
+
 def _resolve(query: str) -> str:
     q = query.strip().upper()
     rows = _rows(_get("/securities", q=q, engine="stock", market="bonds",

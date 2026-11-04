@@ -4,6 +4,7 @@ from html import escape
 import pandas as pd
 import streamlit as st
 
+from core import moex
 from core import phase as phase_mod
 from core import regime as R
 from core import stock as S
@@ -26,6 +27,23 @@ def load_stock(ticker: str) -> S.Stock:
 def num(v, digits: int = 2) -> str:
     """Число с пробелом между тысячами или «—», если значения нет."""
     return "—" if v is None else f"{v:,.{digits}f}".replace(",", " ")
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def find_similar(query: str) -> list[tuple[str, str]]:
+    return S.suggest(query)
+
+
+@st.cache_data(ttl=24 * 3600, show_spinner=False)
+def moex_share(query: str) -> str | None:
+    try:
+        return moex.share_name(query)
+    except Exception:
+        return None
+
+
+def choose(sym: str) -> None:
+    st.session_state.ticker = sym
 
 
 def pick() -> None:
@@ -61,7 +79,8 @@ st.caption("Проверки трёх инвесторов на данных Yah
 if "ticker" not in st.session_state:
     st.session_state.ticker = "KO"
 c1, c2 = st.columns([1, 4])
-c1.text_input("Тикер", key="ticker", help="Любой тикер Yahoo Finance: AAPL, KO, BRK-B …")
+c1.text_input("Тикер", key="ticker", help="Тикер Yahoo Finance: AAPL, KO, BRK-B, HSBK.IL … Можно ввести название компании латиницей — "
+                                     "страница подскажет тикер.")
 c2.pills("Популярные", POPULAR, key="popular", on_change=pick)
 ticker = st.session_state.ticker.strip().upper()
 
@@ -69,6 +88,17 @@ try:
     s = load_stock(ticker)
 except Exception as e:
     st.error(f"Не удалось загрузить «{ticker}»: {e}")
+    ru = moex_share(ticker)
+    if ru:
+        st.info(f"«{ticker}» — акция Мосбиржи ({ru}). Yahoo с 2022 года не показывает российские акции, поэтому "
+                "здесь её не найти.")
+    hints = find_similar(ticker)
+    if hints:
+        st.markdown("**Возможно, вы искали:**")
+        for sym, name in hints:
+            st.button(f"{sym} — {name}", key=f"hint_{sym}", on_click=choose, args=(sym,))
+    elif not ru:
+        st.caption("Похожих тикеров не нашлось. Попробуйте название компании латиницей, например «Halyk».")
     st.stop()
 
 i = s.info

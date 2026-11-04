@@ -79,6 +79,16 @@ def fetch(ticker: str) -> Stock:
     return Stock(ticker.upper(), info, years, dividends, prices)
 
 
+def suggest(query: str) -> list[tuple[str, str]]:
+    """Похожие акции и фонды в Yahoo по тикеру или названию: [(тикер, «название · биржа»)]."""
+    try:
+        quotes = yf.Search(query, max_results=8).quotes
+    except Exception:
+        return []
+    return [(q["symbol"], f"{q.get('shortname') or q.get('longname') or ''} · {q.get('exchDisp', '')}")
+            for q in quotes if q.get("quoteType") in ("EQUITY", "ETF") and q.get("symbol") != query.upper()][:6]
+
+
 # ---------- вспомогательные расчёты ----------
 
 def cagr(s: pd.Series) -> float | None:
