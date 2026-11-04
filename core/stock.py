@@ -32,6 +32,7 @@ class Stock:
     years: pd.DataFrame          # по годам: выручка, прибыль, EPS, капитал, долг, FCF, оборотные активы/обязательства
     dividends: pd.Series         # выплаты на акцию
     prices: pd.Series            # скорректированные цены закрытия
+    notes: list[str] = field(default_factory=list)  # чего нет в данных и почему (для российских акций)
 
 
 @dataclass
@@ -138,7 +139,7 @@ def graham(s: Stock) -> Verdict:
     i, y = s.info, s.years
     financial = i.get("sector") in FINANCIAL_SECTORS
     pe, pb = i.get("trailingPE"), i.get("priceToBook")
-    cap = i.get("marketCap")
+    cap = i.get("marketCapUsd", i.get("marketCap"))
     cr = i.get("currentRatio")
     ni = y["Чистая прибыль"].dropna()
     eps = y["EPS"].dropna()
@@ -239,11 +240,18 @@ def lynch(s: Stock) -> tuple[Verdict, tuple[str, str], float | None]:
 
 # ---------- макро-чувствительность ----------
 
-def sensitivities(prices: pd.Series, market: pd.Series, ten_year: pd.Series, years: int = 5) -> dict:
-    """Бета к рынку и реакция на ставки по месячным данным за N лет."""
+def sensitivities(prices: pd.Series, market: pd.Series, ten_year: pd.Series | None, years: int = 5) -> dict:
+    """Бета к рынку и реакция на ставки по месячным данным за N лет; без истории ставок — только бета."""
     m = lambda s: s.resample("ME").last()  # noqa: E731
-    df = pd.concat({"stock": m(prices).pct_change() * 100, "mkt": m(market).pct_change() * 100,
-                    "dy": m(ten_year).diff()}, axis=1).dropna()
+    parts = {"stock": m(prices).pct_change() * 100, "mkt": m(market).pct_change() * 100}
+    if ten_year is None:
+        df = pd.concat(parts, axis=1).dropna()
+        df = df[df.index >= df.index[-1] - pd.DateOffset(years=years)]
+        if len(df) < 24:
+            return {}
+        return {"beta": float(np.polyfit(df["mkt"], df["stock"], 1)[0]), "rate": None, "rate_mkt": None,
+                "months": len(df)}
+    df = pd.concat(parts | {"dy": m(ten_year).diff()}, axis=1).dropna()
     df = df[df.index >= df.index[-1] - pd.DateOffset(years=years)]
     if len(df) < 24:
         return {}

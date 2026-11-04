@@ -83,7 +83,7 @@ print("акции и сектора ок")
 
 at.switch_page("views/stock.py").run()
 assert not at.exception, at.exception
-for tk in ["XOM", "JPM", "NVDA", "ZZZZZZ"]:  # цикличная, банк, рост, несуществующий тикер
+for tk in ["XOM", "JPM", "NVDA", "SELG", "SBER", "ZZZZZZ"]:  # цикличная, банк, рост, Мосбиржа, банк РФ, несуществующий
     at.text_input(key="ticker").set_value(tk).run()
     assert not at.exception, (tk, at.exception)
 assert at.error, "для несуществующего тикера должна быть ошибка"

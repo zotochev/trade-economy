@@ -1,10 +1,11 @@
 """Этап 8. Отдельная акция: проверки Грэма, Баффета и Линча и макро-контекст."""
 from html import escape
 
+import numpy as np
 import pandas as pd
 import streamlit as st
 
-from core import moex
+from core import moex, ru_stock
 from core import phase as phase_mod
 from core import regime as R
 from core import stock as S
@@ -21,7 +22,23 @@ POPULAR = ["KO", "AAPL", "MSFT", "NVDA", "JPM", "XOM", "JNJ", "BRK-B", "CAT", "W
 
 @st.cache_data(ttl=6 * 3600, show_spinner="Загружаю данные компании…")
 def load_stock(ticker: str) -> S.Stock:
-    return S.fetch(ticker)
+    """Сначала Yahoo, потом Мосбиржа (+ отчётность smart-lab)."""
+    try:
+        return S.fetch(ticker)
+    except Exception as yahoo_error:
+        ru = ru_stock.fetch(ticker)
+        if ru is None:
+            raise yahoo_error
+        return ru
+
+
+@st.cache_data(ttl=6 * 3600, show_spinner=False)
+def ofz10() -> float | None:
+    try:
+        curve, _ = moex.kbd()
+        return float(np.interp(10, curve.index, curve.values))
+    except Exception:
+        return None
 
 
 def num(v, digits: int = 2) -> str:
@@ -79,8 +96,9 @@ st.caption("Проверки трёх инвесторов на данных Yah
 if "ticker" not in st.session_state:
     st.session_state.ticker = "KO"
 c1, c2 = st.columns([1, 4])
-c1.text_input("Тикер", key="ticker", help="Тикер Yahoo Finance: AAPL, KO, BRK-B, HSBK.IL … Можно ввести название компании латиницей — "
-                                     "страница подскажет тикер.")
+c1.text_input("Тикер", key="ticker", help="Тикер Yahoo Finance (AAPL, KO, BRK-B, HSBK.IL …) или Мосбиржи (SBER, "
+                                         "SELG, LKOH). Можно ввести название компании латиницей — страница "
+                                         "подскажет тикер.")
 c2.pills("Популярные", POPULAR, key="popular", on_change=pick)
 ticker = st.session_state.ticker.strip().upper()
 
@@ -90,8 +108,8 @@ except Exception as e:
     st.error(f"Не удалось загрузить «{ticker}»: {e}")
     ru = moex_share(ticker)
     if ru:
-        st.info(f"«{ticker}» — акция Мосбиржи ({ru}). Yahoo с 2022 года не показывает российские акции, поэтому "
-                "здесь её не найти.")
+        st.info(f"«{ticker}» — акция Мосбиржи ({ru}), но загрузить её сейчас не удалось: Мосбиржа не ответила. "
+                "Попробуйте обновить страницу через минуту.")
     hints = find_similar(ticker)
     if hints:
         st.markdown("**Возможно, вы искали:**")
@@ -102,12 +120,21 @@ except Exception as e:
     st.stop()
 
 i = s.info
-ten = float(ui.load("DGS10").iloc[-1])
+RU = i.get("exchange") == "MOEX"
+if RU:
+    usd = float(ui.load("USDRUB_CBR").iloc[-1])
+    if i.get("marketCap"):
+        i["marketCapUsd"] = i["marketCap"] / usd
+    ten = ofz10()
+    MKT, MKT_NAME = "IMOEX", "индекса Мосбиржи"
+else:
+    ten = float(ui.load("DGS10").iloc[-1])
+    MKT, MKT_NAME = "SPY", "S&P 500"
 g_verdict = S.graham(s)
 b_verdict = S.buffett(s, ten)
 l_verdict, (category, category_hint), growth = S.lynch(s)
 sector = i.get("sector")
-etf = S.SECTOR_ETF.get(sector)
+etf = None if RU else S.SECTOR_ETF.get(sector)
 t = TOKENS[theme()]
 st.html(f"<style>{css(theme())}</style>")
 
@@ -128,20 +155,25 @@ with c1:
             f'Категория по Линчу: <b>{escape(category)}</b><br><span style="color:{t["text2"]};font-size:13px">'
             f'{escape(category_hint)}</span></div></div>')
 with c2:
-    res, _ = results()
-    ph = phase_mod.classify(res)
-    now = R.current(ui.load)
-    lines = [f"Фаза цикла: <b>{escape(ph.name)}</b>", f"Режим: <b>{escape(now.name)}</b>"]
-    if etf:
-        _, stats = regime_stats(R.DEFAULT_METHOD, R.PUBLICATION_LAG)
-        row = stats[(stats["Актив"] == f"{BY_KEY[etf].name} ({etf})") & (stats["Режим"] == now.name)]
-        sect_mean = stats[(stats["Режим"] == now.name) & stats["Актив"].str.contains(r"\(XL")]["Годовых, %"].mean()
-        if len(row):
-            h = float(row["Годовых, %"].iloc[0])
-            lines.append(f"Сектор ({etf}) в этом режиме исторически: <b>{h:+.1f}%</b> год. "
-                         f"(средний сектор {sect_mean:+.1f}%)")
-        lines.append(f"Сектор к S&P 500 за 6 мес.: <b>{relative(ui.load(etf), ui.load('SPY'), 6):+.1f} п.п.</b>")
-    lines.append(f"Акция к S&P 500 за 6 мес.: <b>{relative(s.prices, ui.load('SPY'), 6):+.1f} п.п.</b>")
+    if RU:
+        lines = [f"Акция к индексу Мосбиржи за 6 мес.: <b>{relative(s.prices, ui.load('IMOEX'), 6):+.1f} п.п.</b>",
+                 f"ОФЗ на 10 лет: <b>{num(ten, 1)}%</b> — безрисковая ставка, с которой сравниваем доходность владельца",
+                 f"Капитализация в долларах: <b>{num(i.get('marketCapUsd', 0) / 1e9, 1)} млрд $</b> (по курсу ЦБ)"]
+    else:
+        res, _ = results()
+        ph = phase_mod.classify(res)
+        now = R.current(ui.load)
+        lines = [f"Фаза цикла: <b>{escape(ph.name)}</b>", f"Режим: <b>{escape(now.name)}</b>"]
+        if etf:
+            _, stats = regime_stats(R.DEFAULT_METHOD, R.PUBLICATION_LAG)
+            row = stats[(stats["Актив"] == f"{BY_KEY[etf].name} ({etf})") & (stats["Режим"] == now.name)]
+            sect_mean = stats[(stats["Режим"] == now.name) & stats["Актив"].str.contains(r"\(XL")]["Годовых, %"].mean()
+            if len(row):
+                h = float(row["Годовых, %"].iloc[0])
+                lines.append(f"Сектор ({etf}) в этом режиме исторически: <b>{h:+.1f}%</b> год. "
+                             f"(средний сектор {sect_mean:+.1f}%)")
+            lines.append(f"Сектор к S&P 500 за 6 мес.: <b>{relative(ui.load(etf), ui.load('SPY'), 6):+.1f} п.п.</b>")
+        lines.append(f"Акция к S&P 500 за 6 мес.: <b>{relative(s.prices, ui.load('SPY'), 6):+.1f} п.п.</b>")
     st.html(f'<div style="padding:14px 16px;border-radius:12px;background:{t["hero"]};border:1px solid {t["border"]};'
             f'color:{t["text"]};font-size:14px;line-height:1.7"><div class="eyebrow" style="font-size:11px;'
             f'letter-spacing:.08em;text-transform:uppercase;color:{t["muted"]};font-weight:600">Макро-контекст</div>'
@@ -152,7 +184,9 @@ c1, c2, c3 = st.columns(3, gap="medium")
 c1.html(checklist("Грэм", "«Разумный инвестор», защитный инвестор: дёшево и надёжно", g_verdict))
 c2.html(checklist("Баффет", "качество бизнеса: рентабельность, «ров», деньги владельцу", b_verdict))
 c3.html(checklist("Линч", "цена против роста: PEG и категория", l_verdict))
-st.caption(f"Отчётность Yahoo доступна за {S.years_word(len(s.years))} — меньше, чем просили Грэм (10–20) и Баффет. "
+for note in s.notes:
+    st.warning(note[0].upper() + note[1:], icon="⚠️")
+st.caption(f"Отчётность {'smart-lab (МСФО)' if RU else 'Yahoo'} доступна за {S.years_word(len(s.years))} — меньше, чем просили Грэм (10–20) и Баффет. "
            "«–» — нет данных или критерий неприменим (например, к банкам). Разные инвесторы почти никогда не "
            "соглашаются по одной акции: Грэм ищет дешёвое, Баффет — качественное, Линч — рост по разумной цене.")
 
@@ -160,12 +194,13 @@ st.caption(f"Отчётность Yahoo доступна за {S.years_word(len(
 c1, c2 = st.columns(2, gap="large")
 with c1:
     st.markdown("**Цена против рынка и сектора** (5 лет, начало = 100)")
-    series = {ticker: s.prices, "S&P 500 (SPY)": ui.load("SPY")}
+    series = {ticker: s.prices, ("Индекс Мосбиржи" if RU else "S&P 500 (SPY)"): ui.load(MKT)}
     if etf:
         series[f"Сектор ({etf})"] = ui.load(etf)
     start = max(s.prices.index[0], s.prices.index[-1] - pd.DateOffset(years=5))
     series = {n: x[x.index >= start] / x[x.index >= start].iloc[0] * 100 for n, x in series.items()}
-    st.plotly_chart(line_chart(series, recessions=ui.recessions(), height=320), width="stretch", theme="streamlit")
+    st.plotly_chart(line_chart(series, recessions=None if RU else ui.recessions(), height=320), width="stretch",
+                    theme="streamlit")
 with c2:
     st.markdown("**Выручка, прибыль и свободный денежный поток**, млрд")
     y = s.years[["Выручка", "Чистая прибыль", "FCF"]] / 1e9
@@ -174,19 +209,25 @@ with c2:
                     theme="streamlit")
 
 # --- чувствительность ---
-sens = S.sensitivities(s.prices, ui.load("SPY"), ui.load("DGS10"))
+sens = S.sensitivities(s.prices, ui.load(MKT), None if RU else ui.load("DGS10"))
 if sens:
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Бета к рынку", f"{sens['beta']:.2f}", border=True,
-              help="На сколько % в среднем менялась акция при движении S&P 500 на 1% (месячные данные, 5 лет). "
+              help=f"На сколько % в среднем менялась акция при движении {MKT_NAME} на 1% (месячные данные, 5 лет). "
                    "> 1 — сильнее рынка, < 1 — спокойнее.")
-    c2.metric(f"Реакция на ставки (рынок {sens['rate_mkt']:+.1f}%)", f"{sens['rate']:+.1f}%", border=True, help="Средняя доходность акции за месяц, когда 10-летняя доходность выросла на 1 п.п. — "
-                                "«дюрация» акции. Сильнее рынка — акция похожа на длинную облигацию (компании роста).")
+    if sens["rate"] is None:
+        c2.metric("Реакция на ставки", "—", border=True, help="Для российских акций нет истории доходности ОФЗ "
+                                                               "в данных дашборда — показатель не считаем.")
+    else:
+        c2.metric(f"Реакция на ставки (рынок {sens['rate_mkt']:+.1f}%)", f"{sens['rate']:+.1f}%", border=True, help="Средняя доходность акции за месяц, когда 10-летняя доходность выросла на 1 п.п. — "
+                                    "«дюрация» акции. Сильнее рынка — акция похожа на длинную облигацию (компании роста).")
     payout = i.get("payoutRatio")
     c3.metric("Доля прибыли на дивиденды", f"{payout * 100:.0f}%" if payout is not None else "—", border=True,
               help="Сколько прибыли компания отдаёт дивидендами. Выше 100% — платит больше, чем зарабатывает.")
     c4.metric("Рост EPS в год", f"{growth:+.1f}%" if growth is not None else "—", border=True,
               help=f"Среднегодовой рост прибыли на акцию за доступные {S.years_word(len(s.years))}.")
 
-st.caption("Источник — Yahoo Finance; данные компаний бывают с ошибками и задержкой. Перед любым решением "
-           "сверяйтесь с отчётностью компании (10-K). Это учебный инструмент, а не инвестиционная рекомендация.")
+st.caption(("Источники — Мосбиржа (цена, история, капитализация) и smart-lab.ru (отчётность МСФО, дивиденды). "
+            "Перед любым решением сверяйтесь с отчётностью компании на e-disclosure.ru. " if RU else
+            "Источник — Yahoo Finance; данные компаний бывают с ошибками и задержкой. Перед любым решением "
+            "сверяйтесь с отчётностью компании (10-K). ") + "Это учебный инструмент, а не инвестиционная рекомендация.")
